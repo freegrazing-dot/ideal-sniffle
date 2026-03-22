@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CRITICAL: Ensure Stripe Elements are ALWAYS clickable */
+.StripeElement,
+.StripeElement *,
+.__PrivateStripeElement,
+.__PrivateStripeElement * {
+  pointer-events: all !important;
+  touch-action: manipulation !important;
+  user-select: auto !important;
+  -webkit-user-select: auto !important;
+  cursor: text !important;
+}
+
+/* Ensure Stripe iframes are visible and interactive */
+.StripeElement iframe,
+.__PrivateStripeElement iframe {
+  pointer-events: all !important;
+  touch-action: manipulation !important;
+  min-height: 40px !important;
+  height: auto !important;
+  width: 100% !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
+
+/* Force Stripe iframe containers to be interactive */
+.StripeElement,
+.__PrivateStripeElement {
+  display: block !important;
+  min-height: 40px !important;
+  width: 100% !important;
+}
+
+div:has(> .StripeElement),
+div:has(> .__PrivateStripeElement) {
+  pointer-events: all !important;
+  touch-action: manipulation !important;
+}
+
+/* Ensure no overlays block interactions */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
