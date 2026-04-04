@@ -1,0 +1,13 @@
+name = "bonita-watersports"
+compatibility_date = "2024-01-01"
+
+[build]
+command = "npm run build"
+cwd = ""
+
+[build.upload]
+format = "service-worker"
+
+[[build.upload.rules]]
+type = "ESModule"
+globs = ["**/*.js"]
