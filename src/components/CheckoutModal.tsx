@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, Loader as Loader2, Info, TriangleAlert as AlertTriangle, Calendar, Tag } from 'lucide-react';
+import { X, Loader2, Info, AlertTriangle, Calendar, Tag } from 'lucide-react';
+
 import type { CartItem } from '../lib/cart-context';
 import { supabase } from '../lib/supabase';
 import { PromoBanner } from './PromoBanner';
