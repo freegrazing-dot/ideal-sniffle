@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { X, Loader2, Info, AlertTriangle, Calendar } from 'lucide-react';
+import { X, Loader as Loader2, Info, TriangleAlert as AlertTriangle, Calendar, Tag } from 'lucide-react';
 import type { CartItem } from '../lib/cart-context';
 import { supabase } from '../lib/supabase';
+import { PromoBanner } from './PromoBanner';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -12,7 +13,10 @@ interface CheckoutModalProps {
   lodgingTax: number;
   salesTax: number;
   depositAmount: number;
+  promoCode?: string;
+  promoDiscount?: number;
   onSuccess: () => void;
+  onPromoChange?: (code: string, discount: number) => void;
 }
 
 export default function CheckoutModal({
@@ -24,10 +28,11 @@ export default function CheckoutModal({
   lodgingTax,
   salesTax,
   depositAmount,
+  promoCode: initialPromoCode,
+  promoDiscount: initialPromoDiscount,
   onSuccess: _onSuccess,
+  onPromoChange,
 }: CheckoutModalProps) {
-  console.log('🎟️ CheckoutModal RENDERED - isOpen:', isOpen);
-
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customerEmail, setCustomerEmail] = useState('');
@@ -44,6 +49,20 @@ export default function CheckoutModal({
     passenger_age: false,
     backwater_only: false,
     life_jackets: false,
+  });
+  const [promoCode, setPromoCode] = useState(initialPromoCode || '');
+  const [promoDiscount, setPromoDiscount] = useState(initialPromoDiscount || 0);
+  const [promoMessage, setPromoMessage] = useState('');
+  const [promoApplied, setPromoApplied] = useState(!!initialPromoCode && (initialPromoDiscount || 0) > 0);
+  const [isValidatingPromo, setIsValidatingPromo] = useState(false);
+  const [allowBackdropClick, setAllowBackdropClick] = useState(false);
+
+  console.log('🏷️ [CHECKOUT] Initial promo state:', {
+    initialPromoCode,
+    initialPromoDiscount,
+    promoCode,
+    promoDiscount,
+    promoApplied
   });
 
   const calculateOperatorAge = (dob: string): number => {
@@ -62,8 +81,145 @@ export default function CheckoutModal({
     item.type === 'activity' && item.activity?.name.toLowerCase().includes('jet ski')
   );
 
+  const handleApplyPromoCode = async () => {
+    console.log('✨ CHECKOUT FIX v3 - 2026-03-25 15:45 UTC');
+    console.log('🎟️ [CHECKOUT] Apply promo clicked:', promoCode);
+    const codeToUse = promoCode.trim().toUpperCase();
+
+    if (!codeToUse) {
+      setPromoMessage('Please enter a promo code');
+      setPromoApplied(false);
+      setPromoDiscount(0);
+      return;
+    }
+
+    setIsValidatingPromo(true);
+    setPromoMessage('');
+
+    try {
+      const hasProperties = items.some(item => item.type === 'property');
+      const hasActivities = items.some(item => item.type === 'activity');
+      const hasMerchandise = items.some(item => item.type === 'merchandise');
+
+      let appliesTo = 'all';
+      if (hasProperties && !hasActivities && !hasMerchandise) {
+        appliesTo = 'properties';
+      } else if (hasActivities && !hasProperties && !hasMerchandise) {
+        appliesTo = 'activities';
+      } else if (hasMerchandise && !hasProperties && !hasActivities) {
+        appliesTo = 'merchandise';
+      }
+
+      const { data, error } = await supabase.rpc('validate_promo_code', {
+        code_text: codeToUse,
+        applies_to_type: appliesTo
+      });
+
+      if (error) {
+        console.error('Promo code validation error:', error);
+        setPromoApplied(false);
+        setPromoDiscount(0);
+        setPromoMessage('Error validating promo code');
+        return;
+      }
+
+      const result = data?.[0];
+
+      if (!result) {
+        setPromoApplied(false);
+        setPromoDiscount(0);
+        setPromoMessage('Invalid or expired promo code');
+        return;
+      }
+
+      console.log('✅ [CHECKOUT] Promo validation result:', result);
+
+      // Handle boolean check for is_valid (could be boolean, string 'true'/'t', etc.)
+      const isValid =
+        result.is_valid === true ||
+        result.is_valid === 'true' ||
+        result.is_valid === 't';
+
+      if (isValid) {
+        console.log('🎉 [CHECKOUT] Valid promo! Setting state:', {
+          code: codeToUse,
+          discount: result.discount_value
+        });
+        setPromoCode(codeToUse);
+        setPromoApplied(true);
+        setPromoDiscount(Number(result.discount_value) || 0);
+        setPromoMessage(result.message || 'Promo code applied!');
+        if (onPromoChange) {
+          console.log('📤 [CHECKOUT] Notifying parent of promo change');
+          onPromoChange(codeToUse, Number(result.discount_value) || 0);
+        }
+      } else {
+        console.log('❌ [CHECKOUT] Invalid promo:', result.message);
+        setPromoApplied(false);
+        setPromoDiscount(0);
+        setPromoMessage(result.message || 'Invalid or expired promo code');
+      }
+    } catch (error) {
+      console.error('Error applying promo code:', error);
+      setPromoApplied(false);
+      setPromoDiscount(0);
+      setPromoMessage('Error applying promo code');
+    } finally {
+      setIsValidatingPromo(false);
+    }
+  };
+
+  const handleRemovePromoCode = () => {
+    setPromoCode('');
+    setPromoDiscount(0);
+    setPromoMessage('');
+    setPromoApplied(false);
+    if (onPromoChange) {
+      onPromoChange('', 0);
+    }
+  };
+
+  const discountAmount = (subtotal * promoDiscount) / 100;
+  const discountedSubtotal = subtotal - discountAmount;
+
+  // Recalculate taxes on the discounted subtotal (proportional to item types)
+  const hasProperties = items.some(item => item.type === 'property');
+  const hasActivities = items.some(item => item.type === 'activity');
+  const hasMerchandise = items.some(item => item.type === 'merchandise');
+
+  // Calculate property and activity/merchandise subtotals after discount
+  const propertySubtotal = items.filter(item => item.type === 'property').reduce((sum, item) => sum + item.price, 0);
+  const activityMerchandiseSubtotal = items.filter(item => item.type === 'activity' || item.type === 'merchandise').reduce((sum, item) => sum + item.price, 0);
+
+  // Apply proportional discount
+  const propertyDiscount = propertySubtotal > 0 ? (discountAmount * propertySubtotal / subtotal) : 0;
+  const activityMerchandiseDiscount = activityMerchandiseSubtotal > 0 ? (discountAmount * activityMerchandiseSubtotal / subtotal) : 0;
+
+  const discountedPropertySubtotal = propertySubtotal - propertyDiscount;
+  const discountedActivityMerchandiseSubtotal = activityMerchandiseSubtotal - activityMerchandiseDiscount;
+
+  // Calculate taxes on discounted amounts
+  const adjustedLodgingTax = hasProperties && promoDiscount > 0 ? (discountedPropertySubtotal * 0.115) : lodgingTax;
+  const adjustedSalesTax = (hasActivities || hasMerchandise) && promoDiscount > 0 ? (discountedActivityMerchandiseSubtotal * 0.065) : salesTax;
+
+  const finalTotal = promoDiscount > 0
+    ? discountedSubtotal + adjustedLodgingTax + adjustedSalesTax
+    : totalAmount;
+
+  console.log('💰 [CHECKOUT] Discount Calculation:', {
+    promoCode,
+    promoDiscount,
+    subtotal,
+    discountAmount,
+    discountedSubtotal,
+    adjustedLodgingTax: promoDiscount > 0 ? adjustedLodgingTax : lodgingTax,
+    adjustedSalesTax: promoDiscount > 0 ? adjustedSalesTax : salesTax,
+    finalTotal
+  });
+
   useEffect(() => {
     if (isOpen) {
+      console.log('🟢 [CHECKOUT] Modal opened, initializing state');
       setError(null);
       setCustomerEmail('');
       setCustomerName('');
@@ -79,6 +235,16 @@ export default function CheckoutModal({
         backwater_only: false,
         life_jackets: false,
       });
+
+      // Prevent backdrop clicks for 500ms after modal opens to prevent click bleed-through
+      setAllowBackdropClick(false);
+      console.log('🟡 [CHECKOUT] Backdrop clicks disabled for 500ms');
+      const timer = setTimeout(() => {
+        setAllowBackdropClick(true);
+        console.log('🟢 [CHECKOUT] Backdrop clicks now enabled');
+      }, 500);
+
+      return () => clearTimeout(timer);
     } else {
       // When modal closes, force cleanup of expired bookings
       if (!isOpen) {
@@ -91,7 +257,12 @@ export default function CheckoutModal({
     }
   }, [isOpen]);
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }
     console.log('🚀 [CHECKOUT] Button clicked - starting checkout process');
     console.log('🚀 [CHECKOUT] Customer:', { customerEmail, customerName });
     console.log('🚀 [CHECKOUT] Has Jet Ski:', hasJetSki);
@@ -191,22 +362,39 @@ export default function CheckoutModal({
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`;
       console.log('🌐 [CHECKOUT] API URL:', apiUrl);
 
+      const paymentData = {
+        items,
+        customerEmail,
+        customerName,
+        subtotal,
+        lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : lodgingTax,
+        salesTax: promoDiscount > 0 ? adjustedSalesTax : salesTax,
+        totalPrice: finalTotal,
+        operatorDob: hasJetSki ? operatorDob : undefined,
+        boatingSafetyCardUrl: boatingSafetyCardUrl || undefined,
+        acknowledgments: hasJetSki ? acknowledgments : undefined,
+        promoCode: promoApplied ? promoCode : undefined,
+        promoDiscount: promoApplied ? promoDiscount : undefined,
+      };
+
+      console.log('💳 [CHECKOUT] Payment data being sent:', {
+        subtotal,
+        promoCode,
+        promoDiscount,
+        discountAmount,
+        discountedSubtotal,
+        adjustedLodgingTax: promoDiscount > 0 ? adjustedLodgingTax : lodgingTax,
+        adjustedSalesTax: promoDiscount > 0 ? adjustedSalesTax : salesTax,
+        finalTotal,
+      });
+
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          items,
-          customerEmail,
-          customerName,
-          lodgingTax,
-          salesTax,
-          operatorDob: hasJetSki ? operatorDob : undefined,
-          boatingSafetyCardUrl: boatingSafetyCardUrl || undefined,
-          acknowledgments: hasJetSki ? acknowledgments : undefined,
-        }),
+        body: JSON.stringify(paymentData),
       });
 
       console.log('📡 [CHECKOUT] Response status:', response.status);
@@ -250,46 +438,53 @@ export default function CheckoutModal({
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          console.log('🎟️ Backdrop clicked - closing modal');
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && allowBackdropClick) {
+          console.log('🔵 [CHECKOUT] Backdrop clicked, closing modal');
           onClose();
+        } else if (e.target === e.currentTarget && !allowBackdropClick) {
+          console.log('🔵 [CHECKOUT] Backdrop clicked but ignoring (within delay window)');
         }
       }}
     >
       <div
         className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative"
-        onClick={(e) => {
-          console.log('🎟️ Inner modal clicked - preventing close');
-          e.stopPropagation();
-        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center rounded-t-2xl">
           <h2 className="text-2xl font-bold text-gray-900">Secure Checkout</h2>
           <button
-            onClick={onClose}
+            type="button"
+            onClick={() => {
+              console.log('🔴 [CHECKOUT] X button clicked, closing modal');
+              onClose();
+            }}
             disabled={isLoading}
-            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             title="Close"
+            aria-label="Close"
           >
-            <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
+            <X className="w-6 h-6 text-gray-400" />
           </button>
         </div>
+
+        <PromoBanner placement="checkout" />
 
         <div className="p-6">
           <div className="space-y-6">
 
             {items.some(item => item.type === 'property') && depositAmount > 0 && (
-              <div className="bg-yellow-50 border-2 border-yellow-400 p-4 rounded-lg">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center text-yellow-900 font-bold text-lg">
+                  <div className="flex-shrink-0 w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-semibold text-sm">
                     $
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-bold text-yellow-900 text-base mb-1">
+                    <h3 className="font-semibold text-gray-900 text-sm mb-1">
                       ${depositAmount.toFixed(0)} Security Deposit Authorization (Hold)
                     </h3>
-                    <p className="text-yellow-800 text-sm leading-relaxed">
+                    <p className="text-gray-600 text-xs leading-relaxed">
                       Your cart includes vacation rental(s). A ${depositAmount.toFixed(0)} hold will be placed on your card but NOT charged. The hold will be automatically released after checkout if there are no damages.
                     </p>
                   </div>
@@ -310,22 +505,28 @@ export default function CheckoutModal({
                   <span className="font-medium text-gray-900">${item.price.toFixed(2)}</span>
                 </div>
               ))}
-              {(depositAmount > 0 || lodgingTax > 0 || salesTax > 0) && (
+              {(depositAmount > 0 || lodgingTax > 0 || salesTax > 0 || promoApplied) && (
                 <>
                   <div className="pt-2 border-t border-gray-200 flex justify-between text-sm">
                     <span className="text-gray-700">Subtotal</span>
                     <span className="font-medium text-gray-900">${subtotal.toFixed(2)}</span>
                   </div>
-                  {salesTax > 0 && (
+                  {promoApplied && promoDiscount > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-700">Sales Tax (6.5%)</span>
-                      <span className="font-medium text-gray-900">${salesTax.toFixed(2)}</span>
+                      <span className="text-green-600 font-medium">Discount ({promoDiscount}%) - {promoCode}</span>
+                      <span className="font-medium text-green-600">-${discountAmount.toFixed(2)}</span>
                     </div>
                   )}
-                  {lodgingTax > 0 && (
+                  {(adjustedSalesTax > 0 || salesTax > 0) && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-700">Sales Tax (6.5%)</span>
+                      <span className="font-medium text-gray-900">${(promoDiscount > 0 ? adjustedSalesTax : salesTax).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {(adjustedLodgingTax > 0 || lodgingTax > 0) && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-700">Lodging Tax (11.5%)</span>
-                      <span className="font-medium text-gray-900">${lodgingTax.toFixed(2)}</span>
+                      <span className="font-medium text-gray-900">${(promoDiscount > 0 ? adjustedLodgingTax : lodgingTax).toFixed(2)}</span>
                     </div>
                   )}
                   {depositAmount > 0 && (
@@ -339,7 +540,7 @@ export default function CheckoutModal({
 
               <div className="pt-3 border-t-2 border-gray-300 flex justify-between">
                 <span className="font-semibold text-gray-900">Total</span>
-                <span className="text-xl font-bold text-blue-600">${totalAmount.toFixed(2)}</span>
+                <span className="text-xl font-bold text-blue-600">${finalTotal.toFixed(2)}</span>
               </div>
             </div>
 
@@ -372,6 +573,60 @@ export default function CheckoutModal({
                   placeholder="john@example.com"
                   required
                 />
+              </div>
+
+              <div>
+                <label htmlFor="promo-code" className="block text-sm font-medium text-gray-700 mb-2">
+                  Promo Code (Optional)
+                </label>
+                {promoApplied ? (
+                  <div className="bg-green-50 border border-green-300 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Tag className="w-4 h-4 text-green-600" />
+                        <div>
+                          <p className="text-sm font-medium text-green-800">{promoCode} applied ({promoDiscount}% off)</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleRemovePromoCode}
+                        className="px-3 py-1 text-xs bg-red-500 text-white rounded font-medium hover:bg-red-600 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border border-gray-200 rounded-lg p-3">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        id="promo-code"
+                        value={promoCode}
+                        onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                        placeholder="Enter promo code"
+                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            handleApplyPromoCode();
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={handleApplyPromoCode}
+                        disabled={isValidatingPromo || !promoCode.trim()}
+                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isValidatingPromo ? 'Checking...' : 'Apply'}
+                      </button>
+                    </div>
+                    {promoMessage && (
+                      <p className={`mt-2 text-xs ${promoApplied ? 'text-green-600 font-medium' : 'text-red-600'}`}>
+                        {promoMessage}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {hasJetSki && (
@@ -600,7 +855,8 @@ export default function CheckoutModal({
             )}
 
             <button
-              onClick={handleCheckout}
+              onClick={(e) => handleCheckout(e)}
+              onMouseDown={(e) => e.stopPropagation()}
               disabled={isLoading || uploadingCard || !customerEmail || !customerName}
               className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-cyan-700 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
