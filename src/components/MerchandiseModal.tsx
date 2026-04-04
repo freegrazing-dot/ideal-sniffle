@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { X, ShoppingCart, Shirt, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ShoppingCart, Shirt, ChevronLeft, ChevronRight, Tag, CircleCheck as CheckCircle } from 'lucide-react';
 import { MerchandiseItem } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface MerchandiseModalProps {
   isOpen: boolean;
   onClose: () => void;
   items: MerchandiseItem[];
-  onAddToCart: (item: MerchandiseItem, size: string, color: string, quantity: number) => void;
+  onAddToCart: (item: MerchandiseItem, size: string, color: string, quantity: number, discountedPrice?: number) => void;
 }
 
 export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }: MerchandiseModalProps) {
@@ -15,23 +16,109 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
   const [selectedColor, setSelectedColor] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoDiscount, setPromoDiscount] = useState(0);
+  const [promoError, setPromoError] = useState('');
+  const [applyingPromo, setApplyingPromo] = useState(false);
+
+  console.log('🛍️ MerchandiseModal render - isOpen:', isOpen, 'items count:', items?.length);
 
   if (!isOpen) return null;
 
   const handleSelectItem = (item: MerchandiseItem) => {
+    console.log('=== MERCHANDISE MODAL SELECT ITEM v2026-04-04 ===');
+    console.log('Selected item:', item.name);
+    console.log('Full item:', JSON.stringify(item, null, 2));
+    console.log('Sizes array:', item.sizes);
+    console.log('Sizes type:', typeof item.sizes);
+    console.log('Sizes length:', item.sizes?.length);
+    console.log('Sizes is array?', Array.isArray(item.sizes));
+    console.log('Colors array:', item.colors);
+    console.log('Colors type:', typeof item.colors);
+    console.log('Colors length:', item.colors?.length);
+    console.log('Colors is array?', Array.isArray(item.colors));
+    console.log('Has sizes?', Array.isArray(item.sizes) && item.sizes.length > 0);
+    console.log('Has colors?', Array.isArray(item.colors) && item.colors.length > 0);
+    console.log('=========================================');
+
     setSelectedItem(item);
-    setSelectedSize(item.sizes[0] || '');
-    setSelectedColor(item.colors[0] || '');
+    // Only set default size/color if the arrays exist and have items
+    const hasSizes = Array.isArray(item.sizes) && item.sizes.length > 0;
+    const hasColors = Array.isArray(item.colors) && item.colors.length > 0;
+
+    setSelectedSize(hasSizes ? item.sizes[0] : '');
+    setSelectedColor(hasColors ? item.colors[0] : '');
     setQuantity(1);
     setCurrentImageIndex(0);
+    setPromoCode('');
+    setPromoDiscount(0);
+    setPromoError('');
+  };
+
+  const handleApplyPromo = async () => {
+    if (!promoCode.trim()) {
+      setPromoError('Please enter a promo code');
+      return;
+    }
+
+    setApplyingPromo(true);
+    setPromoError('');
+
+    try {
+      const { data, error } = await supabase.rpc('validate_promo_code', {
+        code_text: promoCode.trim().toUpperCase(),
+        applies_to_type: 'merchandise'
+      });
+
+      if (error) throw error;
+
+      if (data && data[0]?.is_valid) {
+        setPromoDiscount(Number(data[0].discount_value));
+        setPromoError('');
+      } else {
+        setPromoError(data?.[0]?.message || 'Invalid promo code');
+        setPromoDiscount(0);
+      }
+    } catch (err) {
+      console.error('Error validating promo code:', err);
+      setPromoError('Failed to validate promo code');
+      setPromoDiscount(0);
+    } finally {
+      setApplyingPromo(false);
+    }
   };
 
   const handleAddToCart = () => {
-    if (!selectedItem || !selectedSize || !selectedColor) {
-      alert('Please select size and color');
+    if (!selectedItem) return;
+
+    // Only require size/color if the item has those options
+    const needsSize = Array.isArray(selectedItem.sizes) && selectedItem.sizes.length > 0;
+    const needsColor = Array.isArray(selectedItem.colors) && selectedItem.colors.length > 0;
+
+    console.log('=== ADD TO CART VALIDATION ===');
+    console.log('Item:', selectedItem.name);
+    console.log('Sizes:', selectedItem.sizes);
+    console.log('Colors:', selectedItem.colors);
+    console.log('Is sizes array?', Array.isArray(selectedItem.sizes));
+    console.log('Is colors array?', Array.isArray(selectedItem.colors));
+    console.log('needsSize:', needsSize, 'selectedSize:', selectedSize);
+    console.log('needsColor:', needsColor, 'selectedColor:', selectedColor);
+
+    if (needsSize && !selectedSize) {
+      alert('Please select a size');
       return;
     }
-    onAddToCart(selectedItem, selectedSize, selectedColor, quantity);
+
+    if (needsColor && !selectedColor) {
+      alert('Please select a color');
+      return;
+    }
+
+    console.log('Validation passed, adding to cart...');
+    const discountedPrice = promoDiscount > 0
+      ? selectedItem.price * (1 - promoDiscount / 100)
+      : selectedItem.price;
+    onAddToCart(selectedItem, selectedSize || 'N/A', selectedColor || 'N/A', quantity, discountedPrice);
     setSelectedItem(null);
   };
 
@@ -68,9 +155,12 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
           <div className="bg-gradient-to-r from-teal-500 to-cyan-500 px-8 py-6">
             <div className="flex items-center gap-3">
               <Shirt className="w-10 h-10 text-white" />
-              <h2 className="text-3xl font-bold text-white">TKAC Merchandise</h2>
+              <div className="flex-1">
+                <h2 className="text-3xl font-bold text-white">TKAC Merchandise</h2>
+                <p className="text-teal-50 mt-2">Take home a piece of your adventure!</p>
+              </div>
+              <div className="text-xs text-teal-100 opacity-50">v2.0404</div>
             </div>
-            <p className="text-teal-50 mt-2">Take home a piece of your adventure!</p>
           </div>
 
           <div className="p-8 max-h-[calc(100vh-200px)] overflow-y-auto">
@@ -88,6 +178,11 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                           src={item.image_url}
                           alt={item.name}
                           className="w-full h-full object-cover"
+                          onError={(e) => {
+                            console.error('Failed to load image:', item.image_url);
+                            e.currentTarget.style.display = 'none';
+                          }}
+                          onLoad={() => console.log('Image loaded:', item.image_url)}
                         />
                       ) : (
                         <Shirt className="w-24 h-24 text-teal-600" />
@@ -103,7 +198,9 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                       {item.stock_quantity > 0 ? (
                         <div className="mt-3 text-center">
                           <button className="w-full bg-teal-500 text-white py-2 rounded-lg font-medium hover:bg-teal-600 transition-colors">
-                            Select Options
+                            {(item.sizes && item.sizes.length > 0) || (item.colors && item.colors.length > 0)
+                              ? 'Select Options'
+                              : 'View Details'}
                           </button>
                         </div>
                       ) : (
@@ -132,6 +229,11 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                           src={allImages[currentImageIndex]}
                           alt={`${selectedItem.name} - View ${currentImageIndex + 1}`}
                           className="w-full h-full object-cover"
+                          onError={(e) => {
+                            console.error('Failed to load detail image:', allImages[currentImageIndex]);
+                            e.currentTarget.style.display = 'none';
+                          }}
+                          onLoad={() => console.log('Detail image loaded:', allImages[currentImageIndex])}
                         />
                         {allImages.length > 1 && (
                           <>
@@ -176,12 +278,34 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                   <div>
                     <h3 className="text-3xl font-bold text-gray-900 mb-2">{selectedItem.name}</h3>
                     <p className="text-gray-600 mb-4">{selectedItem.description}</p>
-                    <div className="text-4xl font-bold text-teal-600 mb-6">
-                      ${selectedItem.price.toFixed(2)}
+                    <div className="space-y-2 mb-6">
+                      {promoDiscount > 0 && (
+                        <div className="text-2xl text-gray-500 line-through">
+                          ${selectedItem.price.toFixed(2)} each
+                        </div>
+                      )}
+                      <div className="text-4xl font-bold text-teal-600">
+                        ${promoDiscount > 0
+                          ? (selectedItem.price * (1 - promoDiscount / 100)).toFixed(2)
+                          : selectedItem.price.toFixed(2)} each
+                      </div>
+                      {promoDiscount > 0 && (
+                        <div className="text-lg text-green-600 font-semibold">
+                          Save {promoDiscount}%!
+                        </div>
+                      )}
                     </div>
 
+                    {/* Debug info - remove after testing */}
+                    {process.env.NODE_ENV === 'development' && (
+                      <div className="mb-4 p-3 bg-yellow-100 border border-yellow-300 rounded text-sm">
+                        <div>Sizes: {JSON.stringify(selectedItem.sizes)} (length: {selectedItem.sizes?.length})</div>
+                        <div>Colors: {JSON.stringify(selectedItem.colors)} (length: {selectedItem.colors?.length})</div>
+                      </div>
+                    )}
+
                     <div className="space-y-4">
-                      {selectedItem.sizes.length > 0 && (
+                      {selectedItem.sizes && selectedItem.sizes.length > 0 && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Size
@@ -189,6 +313,7 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                           <select
                             value={selectedSize}
                             onChange={(e) => setSelectedSize(e.target.value)}
+                            required={false}
                             className="w-full px-4 py-3 border border-teal-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-lg"
                           >
                             {selectedItem.sizes.map((size) => (
@@ -200,7 +325,7 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                         </div>
                       )}
 
-                      {selectedItem.colors.length > 0 && (
+                      {selectedItem.colors && selectedItem.colors.length > 0 && (
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Color
@@ -208,6 +333,7 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                           <select
                             value={selectedColor}
                             onChange={(e) => setSelectedColor(e.target.value)}
+                            required={false}
                             className="w-full px-4 py-3 border border-teal-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-white text-lg"
                           >
                             {selectedItem.colors.map((color) => (
@@ -233,7 +359,55 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                         />
                       </div>
 
+                      <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
+                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
+                          <Tag className="w-4 h-4 text-green-600" />
+                          Promo Code
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={promoCode}
+                            onChange={(e) => {
+                              setPromoCode(e.target.value.toUpperCase());
+                              setPromoError('');
+                            }}
+                            placeholder="Enter code"
+                            className="flex-1 px-4 py-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all uppercase"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleApplyPromo}
+                            disabled={applyingPromo || !promoCode.trim()}
+                            className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          >
+                            {applyingPromo ? 'Applying...' : 'Apply'}
+                          </button>
+                        </div>
+                        {promoError && (
+                          <p className="text-sm text-red-600 mt-2">{promoError}</p>
+                        )}
+                        {promoDiscount > 0 && (
+                          <div className="mt-2 flex items-center gap-2 text-green-700">
+                            <CheckCircle className="w-4 h-4" />
+                            <span className="text-sm font-semibold">{promoDiscount}% discount applied!</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {quantity > 1 && (
+                        <div className="bg-teal-50 border border-teal-200 p-4 rounded-lg">
+                          <div className="flex justify-between items-center text-lg">
+                            <span className="text-gray-700">Total for {quantity} items:</span>
+                            <span className="font-bold text-teal-600">
+                              ${(selectedItem.price * (1 - promoDiscount / 100) * quantity).toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       <button
+                        type="button"
                         onClick={handleAddToCart}
                         className="w-full bg-gradient-to-r from-teal-500 to-cyan-500 text-white py-4 rounded-lg font-semibold text-lg hover:from-teal-600 hover:to-cyan-600 transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 mt-6"
                       >
