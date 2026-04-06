@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   X,
   ShoppingCart,
@@ -5,7 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Tag,
-  CheckCircle,
+  CheckCircle
 } from 'lucide-react';
 import { MerchandiseItem } from '../types';
 import { supabase } from '../lib/supabase';
