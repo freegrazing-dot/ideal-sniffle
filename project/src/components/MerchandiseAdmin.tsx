@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, Package, X, Image as ImageIcon } from 'lucide-react';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Package,
+  X,
+  Image as ImageIcon,
+} from 'lucide-react';
 
 type MerchandiseItem = {
   id: number;
@@ -66,7 +73,7 @@ export function MerchandiseAdmin() {
     },
   ]);
 
-  const [showProductForm, setShowProductForm] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
 
@@ -77,13 +84,20 @@ export function MerchandiseAdmin() {
     }));
   };
 
-  const openAddForm = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setShowProductForm(true);
+  const parseGalleryImages = (value: string) => {
+    return value
+      .split(',')
+      .map((img) => img.trim())
+      .filter(Boolean);
   };
 
-  const openEditForm = (item: MerchandiseItem) => {
+  const openAddModal = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowProductModal(true);
+  };
+
+  const openEditModal = (item: MerchandiseItem) => {
     setEditingId(item.id);
     setForm({
       name: item.name,
@@ -94,20 +108,13 @@ export function MerchandiseAdmin() {
       mainImage: item.mainImage,
       galleryImages: item.galleryImages.join(', '),
     });
-    setShowProductForm(true);
+    setShowProductModal(true);
   };
 
-  const closeForm = () => {
-    setShowProductForm(false);
+  const closeModal = () => {
+    setShowProductModal(false);
     setEditingId(null);
     setForm(emptyForm);
-  };
-
-  const parseGalleryImages = (value: string) => {
-    return value
-      .split(',')
-      .map((img) => img.trim())
-      .filter(Boolean);
   };
 
   const handleSaveProduct = () => {
@@ -165,7 +172,7 @@ export function MerchandiseAdmin() {
       setItems((prev) => [newItem, ...prev]);
     }
 
-    closeForm();
+    closeModal();
   };
 
   const handleDeleteProduct = (id: number) => {
@@ -186,138 +193,13 @@ export function MerchandiseAdmin() {
         </div>
 
         <button
-          onClick={openAddForm}
+          onClick={openAddModal}
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
           Add Product
         </button>
       </div>
-
-      {showProductForm && (
-        <div className="mb-6 border border-gray-200 rounded-xl p-6 bg-gray-50">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-gray-900">
-              {editingId !== null ? 'Edit Product' : 'Add Product'}
-            </h3>
-            <button
-              onClick={closeForm}
-              className="p-2 rounded-lg hover:bg-gray-200 transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <input
-              type="text"
-              placeholder="Product name"
-              value={form.name}
-              onChange={(e) => handleInputChange('name', e.target.value)}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-
-            <input
-              type="text"
-              placeholder="Category"
-              value={form.category}
-              onChange={(e) => handleInputChange('category', e.target.value)}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-
-            <input
-              type="text"
-              placeholder="Price (example: 24.99)"
-              value={form.price}
-              onChange={(e) => handleInputChange('price', e.target.value)}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-
-            <input
-              type="text"
-              placeholder="Inventory"
-              value={form.inventory}
-              onChange={(e) => handleInputChange('inventory', e.target.value)}
-              className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-
-            <input
-              type="text"
-              placeholder="Main image URL"
-              value={form.mainImage}
-              onChange={(e) => handleInputChange('mainImage', e.target.value)}
-              className="md:col-span-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-
-            <textarea
-              placeholder="Additional image URLs (comma separated)"
-              value={form.galleryImages}
-              onChange={(e) => handleInputChange('galleryImages', e.target.value)}
-              rows={4}
-              className="md:col-span-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
-          </div>
-
-          <label className="flex items-center gap-3 mb-4 text-gray-700">
-            <input
-              type="checkbox"
-              checked={form.active}
-              onChange={(e) => handleInputChange('active', e.target.checked)}
-              className="w-4 h-4"
-            />
-            Active product
-          </label>
-
-          {form.mainImage && (
-            <div className="mb-4">
-              <p className="text-sm font-semibold text-gray-700 mb-2">Main image preview</p>
-              <img
-                src={form.mainImage}
-                alt="Main product preview"
-                className="w-28 h-28 object-cover rounded-lg border"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            </div>
-          )}
-
-          {parseGalleryImages(form.galleryImages).length > 0 && (
-            <div className="mb-4">
-              <p className="text-sm font-semibold text-gray-700 mb-2">Gallery preview</p>
-              <div className="flex flex-wrap gap-3">
-                {parseGalleryImages(form.galleryImages).map((img, index) => (
-                  <img
-                    key={index}
-                    src={img}
-                    alt={`Gallery preview ${index + 1}`}
-                    className="w-20 h-20 object-cover rounded-lg border"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleSaveProduct}
-              className="px-5 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
-            >
-              {editingId !== null ? 'Save Changes' : 'Save Product'}
-            </button>
-
-            <button
-              onClick={closeForm}
-              className="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-slate-50 rounded-lg p-4 border">
@@ -373,7 +255,6 @@ export function MerchandiseAdmin() {
                         <Package className="w-5 h-5 text-gray-500" />
                       </div>
                     )}
-
                     <span className="font-medium text-gray-900">{item.name}</span>
                   </div>
                 </td>
@@ -385,9 +266,7 @@ export function MerchandiseAdmin() {
                 <td className="px-4 py-4 text-gray-700">
                   <div className="flex items-center gap-2">
                     <ImageIcon className="w-4 h-4 text-gray-500" />
-                    <span>
-                      {(item.mainImage ? 1 : 0) + item.galleryImages.length}
-                    </span>
+                    <span>{(item.mainImage ? 1 : 0) + item.galleryImages.length}</span>
                   </div>
                 </td>
 
@@ -406,7 +285,7 @@ export function MerchandiseAdmin() {
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => openEditForm(item)}
+                      onClick={() => openEditModal(item)}
                       className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
                       title="Edit product"
                     >
@@ -435,6 +314,135 @@ export function MerchandiseAdmin() {
           </tbody>
         </table>
       </div>
+
+      {showProductModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-2xl font-bold text-gray-900">
+                {editingId !== null ? 'Edit Product' : 'Add Product'}
+              </h3>
+              <button
+                onClick={closeModal}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <input
+                  type="text"
+                  placeholder="Product name"
+                  value={form.name}
+                  onChange={(e) => handleInputChange('name', e.target.value)}
+                  className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Category"
+                  value={form.category}
+                  onChange={(e) => handleInputChange('category', e.target.value)}
+                  className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Price (example: 24.99)"
+                  value={form.price}
+                  onChange={(e) => handleInputChange('price', e.target.value)}
+                  className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Inventory"
+                  value={form.inventory}
+                  onChange={(e) => handleInputChange('inventory', e.target.value)}
+                  className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+
+                <input
+                  type="text"
+                  placeholder="Main image URL"
+                  value={form.mainImage}
+                  onChange={(e) => handleInputChange('mainImage', e.target.value)}
+                  className="md:col-span-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+
+                <textarea
+                  placeholder="Additional image URLs (comma separated)"
+                  value={form.galleryImages}
+                  onChange={(e) => handleInputChange('galleryImages', e.target.value)}
+                  rows={4}
+                  className="md:col-span-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <label className="flex items-center gap-3 mb-4 text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) => handleInputChange('active', e.target.checked)}
+                  className="w-4 h-4"
+                />
+                Active product
+              </label>
+
+              {form.mainImage && (
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Main image preview</p>
+                  <img
+                    src={form.mainImage}
+                    alt="Main product preview"
+                    className="w-28 h-28 object-cover rounded-lg border"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {parseGalleryImages(form.galleryImages).length > 0 && (
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">Gallery preview</p>
+                  <div className="flex flex-wrap gap-3">
+                    {parseGalleryImages(form.galleryImages).map((img, index) => (
+                      <img
+                        key={index}
+                        src={img}
+                        alt={`Gallery preview ${index + 1}`}
+                        className="w-20 h-20 object-cover rounded-lg border"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleSaveProduct}
+                  className="px-5 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
+                >
+                  {editingId !== null ? 'Save Changes' : 'Save Product'}
+                </button>
+
+                <button
+                  onClick={closeModal}
+                  className="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
