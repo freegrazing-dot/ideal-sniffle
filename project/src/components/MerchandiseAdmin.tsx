@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Plus,
   Pencil,
@@ -7,16 +7,17 @@ import {
   X,
   Image as ImageIcon,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 type MerchandiseItem = {
-  id: number;
+  id: string;
   name: string;
   category: string;
-  price: string;
+  price: number;
   inventory: number;
   active: boolean;
-  mainImage: string;
-  galleryImages: string[];
+  main_image: string | null;
+  gallery_images: string[];
 };
 
 type ProductForm = {
@@ -40,42 +41,34 @@ const emptyForm: ProductForm = {
 };
 
 export function MerchandiseAdmin() {
-  const [items, setItems] = useState<MerchandiseItem[]>([
-    {
-      id: 1,
-      name: '20oz Mint Green Tumbler',
-      category: 'Tumblers',
-      price: '$24.99',
-      inventory: 12,
-      active: true,
-      mainImage: '',
-      galleryImages: [],
-    },
-    {
-      id: 2,
-      name: 'TKAC T-Shirt',
-      category: 'Shirts',
-      price: '$29.99',
-      inventory: 18,
-      active: true,
-      mainImage: '',
-      galleryImages: [],
-    },
-    {
-      id: 3,
-      name: 'TKAC Hat',
-      category: 'Hats',
-      price: '$22.99',
-      inventory: 9,
-      active: false,
-      mainImage: '',
-      galleryImages: [],
-    },
-  ]);
-
+  const [items, setItems] = useState<MerchandiseItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from('merchandise_products')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error loading merchandise products:', error);
+      alert('Could not load merchandise products.');
+    } else {
+      setItems((data || []) as MerchandiseItem[]);
+    }
+
+    setLoading(false);
+  };
 
   const handleInputChange = (field: keyof ProductForm, value: string | boolean) => {
     setForm((prev) => ({
@@ -102,11 +95,11 @@ export function MerchandiseAdmin() {
     setForm({
       name: item.name,
       category: item.category,
-      price: item.price.replace('$', ''),
+      price: String(item.price),
       inventory: String(item.inventory),
       active: item.active,
-      mainImage: item.mainImage,
-      galleryImages: item.galleryImages.join(', '),
+      mainImage: item.main_image || '',
+      galleryImages: (item.gallery_images || []).join(', '),
     });
     setShowProductModal(true);
   };
@@ -117,7 +110,7 @@ export function MerchandiseAdmin() {
     setForm(emptyForm);
   };
 
-  const handleSaveProduct = () => {
+  const handleSaveProduct = async () => {
     if (
       !form.name.trim() ||
       !form.category.trim() ||
@@ -128,58 +121,72 @@ export function MerchandiseAdmin() {
       return;
     }
 
+    const priceNumber = Number(form.price);
     const inventoryNumber = Number(form.inventory);
-    if (Number.isNaN(inventoryNumber)) {
-      alert('Inventory must be a valid number.');
+
+    if (Number.isNaN(priceNumber) || Number.isNaN(inventoryNumber)) {
+      alert('Price and inventory must be valid numbers.');
       return;
     }
 
-    const normalizedPrice = form.price.startsWith('$')
-      ? form.price
-      : `$${form.price}`;
+    const payload = {
+      name: form.name.trim(),
+      category: form.category.trim(),
+      price: priceNumber,
+      inventory: inventoryNumber,
+      active: form.active,
+      main_image: form.mainImage.trim() || null,
+      gallery_images: parseGalleryImages(form.galleryImages),
+    };
 
-    const parsedGalleryImages = parseGalleryImages(form.galleryImages);
+    setSaving(true);
 
-    if (editingId !== null) {
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === editingId
-            ? {
-                ...item,
-                name: form.name.trim(),
-                category: form.category.trim(),
-                price: normalizedPrice,
-                inventory: inventoryNumber,
-                active: form.active,
-                mainImage: form.mainImage.trim(),
-                galleryImages: parsedGalleryImages,
-              }
-            : item
-        )
-      );
+    if (editingId) {
+      const { error } = await supabase
+        .from('merchandise_products')
+        .update(payload)
+        .eq('id', editingId);
+
+      if (error) {
+        console.error('Error updating product:', error);
+        alert('Could not update product.');
+        setSaving(false);
+        return;
+      }
     } else {
-      const newItem: MerchandiseItem = {
-        id: Date.now(),
-        name: form.name.trim(),
-        category: form.category.trim(),
-        price: normalizedPrice,
-        inventory: inventoryNumber,
-        active: form.active,
-        mainImage: form.mainImage.trim(),
-        galleryImages: parsedGalleryImages,
-      };
+      const { error } = await supabase
+        .from('merchandise_products')
+        .insert(payload);
 
-      setItems((prev) => [newItem, ...prev]);
+      if (error) {
+        console.error('Error creating product:', error);
+        alert('Could not create product.');
+        setSaving(false);
+        return;
+      }
     }
 
+    await fetchProducts();
+    setSaving(false);
     closeModal();
   };
 
-  const handleDeleteProduct = (id: number) => {
+  const handleDeleteProduct = async (id: string) => {
     const confirmed = window.confirm('Delete this product?');
     if (!confirmed) return;
 
-    setItems((prev) => prev.filter((item) => item.id !== id));
+    const { error } = await supabase
+      .from('merchandise_products')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting product:', error);
+      alert('Could not delete product.');
+      return;
+    }
+
+    await fetchProducts();
   };
 
   return (
@@ -222,105 +229,109 @@ export function MerchandiseAdmin() {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Product</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Category</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Price</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Inventory</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Images</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
-              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-gray-200">
-            {items.map((item) => (
-              <tr key={item.id} className="hover:bg-gray-50">
-                <td className="px-4 py-4">
-                  <div className="flex items-center gap-3">
-                    {item.mainImage ? (
-                      <img
-                        src={item.mainImage}
-                        alt={item.name}
-                        className="w-10 h-10 object-cover rounded-lg border"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                        <Package className="w-5 h-5 text-gray-500" />
-                      </div>
-                    )}
-                    <span className="font-medium text-gray-900">{item.name}</span>
-                  </div>
-                </td>
-
-                <td className="px-4 py-4 text-gray-700">{item.category}</td>
-                <td className="px-4 py-4 text-gray-700">{item.price}</td>
-                <td className="px-4 py-4 text-gray-700">{item.inventory}</td>
-
-                <td className="px-4 py-4 text-gray-700">
-                  <div className="flex items-center gap-2">
-                    <ImageIcon className="w-4 h-4 text-gray-500" />
-                    <span>{(item.mainImage ? 1 : 0) + item.galleryImages.length}</span>
-                  </div>
-                </td>
-
-                <td className="px-4 py-4">
-                  <span
-                    className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                      item.active
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-200 text-gray-700'
-                    }`}
-                  >
-                    {item.active ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-
-                <td className="px-4 py-4">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => openEditModal(item)}
-                      className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
-                      title="Edit product"
-                    >
-                      <Pencil className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteProduct(item.id)}
-                      className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
-                      title="Delete product"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-
-            {items.length === 0 && (
+      {loading ? (
+        <div className="p-8 text-center text-gray-500">Loading merchandise...</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
+            <thead className="bg-gray-50">
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                  No merchandise products yet.
-                </td>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Product</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Category</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Price</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Inventory</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Images</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+
+            <tbody className="divide-y divide-gray-200">
+              {items.map((item) => (
+                <tr key={item.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      {item.main_image ? (
+                        <img
+                          src={item.main_image}
+                          alt={item.name}
+                          className="w-10 h-10 object-cover rounded-lg border"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+                          <Package className="w-5 h-5 text-gray-500" />
+                        </div>
+                      )}
+                      <span className="font-medium text-gray-900">{item.name}</span>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-4 text-gray-700">{item.category}</td>
+                  <td className="px-4 py-4 text-gray-700">${item.price.toFixed(2)}</td>
+                  <td className="px-4 py-4 text-gray-700">{item.inventory}</td>
+
+                  <td className="px-4 py-4 text-gray-700">
+                    <div className="flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-gray-500" />
+                      <span>{(item.main_image ? 1 : 0) + (item.gallery_images?.length || 0)}</span>
+                    </div>
+                  </td>
+
+                  <td className="px-4 py-4">
+                    <span
+                      className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                        item.active
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {item.active ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openEditModal(item)}
+                        className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        title="Edit product"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteProduct(item.id)}
+                        className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
+                        title="Delete product"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                    No merchandise products yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b">
               <h3 className="text-2xl font-bold text-gray-900">
-                {editingId !== null ? 'Edit Product' : 'Add Product'}
+                {editingId ? 'Edit Product' : 'Add Product'}
               </h3>
               <button
                 onClick={closeModal}
@@ -391,45 +402,13 @@ export function MerchandiseAdmin() {
                 Active product
               </label>
 
-              {form.mainImage && (
-                <div className="mb-4">
-                  <p className="text-sm font-semibold text-gray-700 mb-2">Main image preview</p>
-                  <img
-                    src={form.mainImage}
-                    alt="Main product preview"
-                    className="w-28 h-28 object-cover rounded-lg border"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                </div>
-              )}
-
-              {parseGalleryImages(form.galleryImages).length > 0 && (
-                <div className="mb-4">
-                  <p className="text-sm font-semibold text-gray-700 mb-2">Gallery preview</p>
-                  <div className="flex flex-wrap gap-3">
-                    {parseGalleryImages(form.galleryImages).map((img, index) => (
-                      <img
-                        key={index}
-                        src={img}
-                        alt={`Gallery preview ${index + 1}`}
-                        className="w-20 h-20 object-cover rounded-lg border"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleSaveProduct}
-                  className="px-5 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
+                  disabled={saving}
+                  className="px-5 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50"
                 >
-                  {editingId !== null ? 'Save Changes' : 'Save Product'}
+                  {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Save Product'}
                 </button>
 
                 <button
