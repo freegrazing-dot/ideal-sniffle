@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, Package, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Package, X, Image as ImageIcon } from 'lucide-react';
 
 type MerchandiseItem = {
   id: number;
@@ -8,14 +8,28 @@ type MerchandiseItem = {
   price: string;
   inventory: number;
   active: boolean;
+  mainImage: string;
+  galleryImages: string[];
 };
 
-type NewProductForm = {
+type ProductForm = {
   name: string;
   category: string;
   price: string;
   inventory: string;
   active: boolean;
+  mainImage: string;
+  galleryImages: string;
+};
+
+const emptyForm: ProductForm = {
+  name: '',
+  category: '',
+  price: '',
+  inventory: '',
+  active: true,
+  mainImage: '',
+  galleryImages: '',
 };
 
 export function MerchandiseAdmin() {
@@ -27,6 +41,8 @@ export function MerchandiseAdmin() {
       price: '$24.99',
       inventory: 12,
       active: true,
+      mainImage: '',
+      galleryImages: [],
     },
     {
       id: 2,
@@ -35,6 +51,8 @@ export function MerchandiseAdmin() {
       price: '$29.99',
       inventory: 18,
       active: true,
+      mainImage: '',
+      galleryImages: [],
     },
     {
       id: 3,
@@ -43,43 +61,69 @@ export function MerchandiseAdmin() {
       price: '$22.99',
       inventory: 9,
       active: false,
+      mainImage: '',
+      galleryImages: [],
     },
   ]);
 
-  const [showAddProduct, setShowAddProduct] = useState(false);
-  const [form, setForm] = useState<NewProductForm>({
-    name: '',
-    category: '',
-    price: '',
-    inventory: '',
-    active: true,
-  });
+  const [showProductForm, setShowProductForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState<ProductForm>(emptyForm);
 
-  const handleInputChange = (
-    field: keyof NewProductForm,
-    value: string | boolean
-  ) => {
+  const handleInputChange = (field: keyof ProductForm, value: string | boolean) => {
     setForm((prev) => ({
       ...prev,
       [field]: value,
     }));
   };
 
-  const handleAddProduct = () => {
+  const openAddForm = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowProductForm(true);
+  };
+
+  const openEditForm = (item: MerchandiseItem) => {
+    setEditingId(item.id);
+    setForm({
+      name: item.name,
+      category: item.category,
+      price: item.price.replace('$', ''),
+      inventory: String(item.inventory),
+      active: item.active,
+      mainImage: item.mainImage,
+      galleryImages: item.galleryImages.join(', '),
+    });
+    setShowProductForm(true);
+  };
+
+  const closeForm = () => {
+    setShowProductForm(false);
+    setEditingId(null);
+    setForm(emptyForm);
+  };
+
+  const parseGalleryImages = (value: string) => {
+    return value
+      .split(',')
+      .map((img) => img.trim())
+      .filter(Boolean);
+  };
+
+  const handleSaveProduct = () => {
     if (
       !form.name.trim() ||
       !form.category.trim() ||
       !form.price.trim() ||
       !form.inventory.trim()
     ) {
-      alert('Please fill out all product fields.');
+      alert('Please fill out product name, category, price, and inventory.');
       return;
     }
 
     const inventoryNumber = Number(form.inventory);
-
     if (Number.isNaN(inventoryNumber)) {
-      alert('Inventory must be a number.');
+      alert('Inventory must be a valid number.');
       return;
     }
 
@@ -87,29 +131,47 @@ export function MerchandiseAdmin() {
       ? form.price
       : `$${form.price}`;
 
-    const newItem: MerchandiseItem = {
-      id: Date.now(),
-      name: form.name.trim(),
-      category: form.category.trim(),
-      price: normalizedPrice,
-      inventory: inventoryNumber,
-      active: form.active,
-    };
+    const parsedGalleryImages = parseGalleryImages(form.galleryImages);
 
-    setItems((prev) => [newItem, ...prev]);
+    if (editingId !== null) {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === editingId
+            ? {
+                ...item,
+                name: form.name.trim(),
+                category: form.category.trim(),
+                price: normalizedPrice,
+                inventory: inventoryNumber,
+                active: form.active,
+                mainImage: form.mainImage.trim(),
+                galleryImages: parsedGalleryImages,
+              }
+            : item
+        )
+      );
+    } else {
+      const newItem: MerchandiseItem = {
+        id: Date.now(),
+        name: form.name.trim(),
+        category: form.category.trim(),
+        price: normalizedPrice,
+        inventory: inventoryNumber,
+        active: form.active,
+        mainImage: form.mainImage.trim(),
+        galleryImages: parsedGalleryImages,
+      };
 
-    setForm({
-      name: '',
-      category: '',
-      price: '',
-      inventory: '',
-      active: true,
-    });
+      setItems((prev) => [newItem, ...prev]);
+    }
 
-    setShowAddProduct(false);
+    closeForm();
   };
 
   const handleDeleteProduct = (id: number) => {
+    const confirmed = window.confirm('Delete this product?');
+    if (!confirmed) return;
+
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
@@ -124,7 +186,7 @@ export function MerchandiseAdmin() {
         </div>
 
         <button
-          onClick={() => setShowAddProduct(true)}
+          onClick={openAddForm}
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -132,12 +194,14 @@ export function MerchandiseAdmin() {
         </button>
       </div>
 
-      {showAddProduct && (
+      {showProductForm && (
         <div className="mb-6 border border-gray-200 rounded-xl p-6 bg-gray-50">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-gray-900">Add Product</h3>
+            <h3 className="text-xl font-bold text-gray-900">
+              {editingId !== null ? 'Edit Product' : 'Add Product'}
+            </h3>
             <button
-              onClick={() => setShowAddProduct(false)}
+              onClick={closeForm}
               className="p-2 rounded-lg hover:bg-gray-200 transition-colors"
             >
               <X className="w-5 h-5 text-gray-600" />
@@ -176,6 +240,22 @@ export function MerchandiseAdmin() {
               onChange={(e) => handleInputChange('inventory', e.target.value)}
               className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
+
+            <input
+              type="text"
+              placeholder="Main image URL"
+              value={form.mainImage}
+              onChange={(e) => handleInputChange('mainImage', e.target.value)}
+              className="md:col-span-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
+
+            <textarea
+              placeholder="Additional image URLs (comma separated)"
+              value={form.galleryImages}
+              onChange={(e) => handleInputChange('galleryImages', e.target.value)}
+              rows={4}
+              className="md:col-span-2 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            />
           </div>
 
           <label className="flex items-center gap-3 mb-4 text-gray-700">
@@ -188,16 +268,49 @@ export function MerchandiseAdmin() {
             Active product
           </label>
 
+          {form.mainImage && (
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-gray-700 mb-2">Main image preview</p>
+              <img
+                src={form.mainImage}
+                alt="Main product preview"
+                className="w-28 h-28 object-cover rounded-lg border"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            </div>
+          )}
+
+          {parseGalleryImages(form.galleryImages).length > 0 && (
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-gray-700 mb-2">Gallery preview</p>
+              <div className="flex flex-wrap gap-3">
+                {parseGalleryImages(form.galleryImages).map((img, index) => (
+                  <img
+                    key={index}
+                    src={img}
+                    alt={`Gallery preview ${index + 1}`}
+                    className="w-20 h-20 object-cover rounded-lg border"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button
-              onClick={handleAddProduct}
+              onClick={handleSaveProduct}
               className="px-5 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
             >
-              Save Product
+              {editingId !== null ? 'Save Changes' : 'Save Product'}
             </button>
 
             <button
-              onClick={() => setShowAddProduct(false)}
+              onClick={closeForm}
               className="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
             >
               Cancel
@@ -235,6 +348,7 @@ export function MerchandiseAdmin() {
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Category</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Price</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Inventory</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Images</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
               <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
             </tr>
@@ -245,9 +359,21 @@ export function MerchandiseAdmin() {
               <tr key={item.id} className="hover:bg-gray-50">
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                      <Package className="w-5 h-5 text-gray-500" />
-                    </div>
+                    {item.mainImage ? (
+                      <img
+                        src={item.mainImage}
+                        alt={item.name}
+                        className="w-10 h-10 object-cover rounded-lg border"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+                        <Package className="w-5 h-5 text-gray-500" />
+                      </div>
+                    )}
+
                     <span className="font-medium text-gray-900">{item.name}</span>
                   </div>
                 </td>
@@ -255,6 +381,15 @@ export function MerchandiseAdmin() {
                 <td className="px-4 py-4 text-gray-700">{item.category}</td>
                 <td className="px-4 py-4 text-gray-700">{item.price}</td>
                 <td className="px-4 py-4 text-gray-700">{item.inventory}</td>
+
+                <td className="px-4 py-4 text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-gray-500" />
+                    <span>
+                      {(item.mainImage ? 1 : 0) + item.galleryImages.length}
+                    </span>
+                  </div>
+                </td>
 
                 <td className="px-4 py-4">
                   <span
@@ -271,8 +406,9 @@ export function MerchandiseAdmin() {
                 <td className="px-4 py-4">
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => openEditForm(item)}
                       className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
-                      title="Edit coming next"
+                      title="Edit product"
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
@@ -291,7 +427,7 @@ export function MerchandiseAdmin() {
 
             {items.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                   No merchandise products yet.
                 </td>
               </tr>
