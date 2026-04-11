@@ -29,7 +29,6 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
       setError(error.message)
       setLoading(false)
     } else {
-      // Redirect to admin panel on successful login
       navigate('/admin')
     }
   }
@@ -49,7 +48,7 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          
+
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium">
               Email
@@ -63,7 +62,7 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
               disabled={loading}
             />
           </div>
-          
+
           <div className="space-y-2">
             <label htmlFor="password" className="text-sm font-medium">
               Password
@@ -77,11 +76,11 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
               disabled={loading}
             />
           </div>
-          
+
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}
           </Button>
-          
+
           <div className="text-center">
             <button
               type="button"

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Plus,
   Pencil,
@@ -7,17 +7,16 @@ import {
   X,
   Image as ImageIcon,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 
 type MerchandiseItem = {
-  id: string;
+  id: number;
   name: string;
   category: string;
-  price: number | string | null;
-  inventory: number | string | null;
-  active: boolean | null;
-  main_image: string | null;
-  gallery_images: string[] | null;
+  price: string;
+  inventory: number;
+  active: boolean;
+  mainImage: string;
+  galleryImages: string[];
 };
 
 type ProductForm = {
@@ -40,61 +39,33 @@ const emptyForm: ProductForm = {
   galleryImages: '',
 };
 
-const safeNumber = (value: unknown, fallback = 0): number => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-};
-
-const safeArray = (value: unknown): string[] => {
-  return Array.isArray(value) ? value.filter((v) => typeof v === 'string') : [];
-};
-
 export function MerchandiseAdmin() {
-  const [items, setItems] = useState<MerchandiseItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [items, setItems] = useState<MerchandiseItem[]>([
+    {
+      id: 1,
+      name: '20oz Mint Green Tumbler',
+      category: 'Tumblers',
+      price: '$24.99',
+      inventory: 12,
+      active: true,
+      mainImage: '',
+      galleryImages: [],
+    },
+    {
+      id: 2,
+      name: 'TKAC T-Shirt',
+      category: 'Shirts',
+      price: '$29.99',
+      inventory: 18,
+      active: true,
+      mainImage: '',
+      galleryImages: [],
+    },
+  ]);
+
   const [showProductModal, setShowProductModal] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
-
-  useEffect(() => {
-    void fetchProducts();
-  }, []);
-
-  const fetchProducts = async () => {
-    setLoading(true);
-
-    try {
-      const { data, error } = await supabase
-        .from('merchandise_products')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Error loading merchandise products:', error);
-        setItems([]);
-        return;
-      }
-
-      const normalized = (data || []).map((item: any) => ({
-        id: String(item.id ?? ''),
-        name: item.name ?? '',
-        category: item.category ?? '',
-        price: safeNumber(item.price, 0),
-        inventory: safeNumber(item.inventory, 0),
-        active: Boolean(item.active),
-        main_image: item.main_image ?? '',
-        gallery_images: safeArray(item.gallery_images),
-      }));
-
-      setItems(normalized);
-    } catch (error) {
-      console.error('Unexpected merchandise load error:', error);
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleInputChange = (field: keyof ProductForm, value: string | boolean) => {
     setForm((prev) => ({
@@ -119,13 +90,13 @@ export function MerchandiseAdmin() {
   const openEditModal = (item: MerchandiseItem) => {
     setEditingId(item.id);
     setForm({
-      name: item.name || '',
-      category: item.category || '',
-      price: String(safeNumber(item.price, 0)),
-      inventory: String(safeNumber(item.inventory, 0)),
-      active: Boolean(item.active),
-      mainImage: item.main_image || '',
-      galleryImages: safeArray(item.gallery_images).join(', '),
+      name: item.name,
+      category: item.category,
+      price: item.price.replace('$', ''),
+      inventory: String(item.inventory),
+      active: item.active,
+      mainImage: item.mainImage,
+      galleryImages: item.galleryImages.join(', '),
     });
     setShowProductModal(true);
   };
@@ -136,7 +107,7 @@ export function MerchandiseAdmin() {
     setForm(emptyForm);
   };
 
-  const handleSaveProduct = async () => {
+  const handleSaveProduct = () => {
     if (
       !form.name.trim() ||
       !form.category.trim() ||
@@ -147,81 +118,58 @@ export function MerchandiseAdmin() {
       return;
     }
 
-    const priceNumber = safeNumber(form.price, NaN);
-    const inventoryNumber = safeNumber(form.inventory, NaN);
-
-    if (Number.isNaN(priceNumber) || Number.isNaN(inventoryNumber)) {
-      alert('Price and inventory must be valid numbers.');
+    const inventoryNumber = Number(form.inventory);
+    if (Number.isNaN(inventoryNumber)) {
+      alert('Inventory must be a valid number.');
       return;
     }
 
-    const payload = {
-      name: form.name.trim(),
-      category: form.category.trim(),
-      price: priceNumber,
-      inventory: inventoryNumber,
-      active: form.active,
-      main_image: form.mainImage.trim() || null,
-      gallery_images: parseGalleryImages(form.galleryImages),
-    };
+    const normalizedPrice = form.price.startsWith('$')
+      ? form.price
+      : `$${form.price}`;
 
-    setSaving(true);
+    const parsedGalleryImages = parseGalleryImages(form.galleryImages);
 
-    try {
-      if (editingId) {
-        const { error } = await supabase
-          .from('merchandise_products')
-          .update(payload)
-          .eq('id', editingId);
+    if (editingId !== null) {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === editingId
+            ? {
+                ...item,
+                name: form.name.trim(),
+                category: form.category.trim(),
+                price: normalizedPrice,
+                inventory: inventoryNumber,
+                active: form.active,
+                mainImage: form.mainImage.trim(),
+                galleryImages: parsedGalleryImages,
+              }
+            : item
+        )
+      );
+    } else {
+      const newItem: MerchandiseItem = {
+        id: Date.now(),
+        name: form.name.trim(),
+        category: form.category.trim(),
+        price: normalizedPrice,
+        inventory: inventoryNumber,
+        active: form.active,
+        mainImage: form.mainImage.trim(),
+        galleryImages: parsedGalleryImages,
+      };
 
-        if (error) {
-          console.error('Error updating product:', error);
-          alert('Could not update product.');
-          return;
-        }
-      } else {
-        const { error } = await supabase
-          .from('merchandise_products')
-          .insert(payload);
-
-        if (error) {
-          console.error('Error creating product:', error);
-          alert('Could not create product.');
-          return;
-        }
-      }
-
-      await fetchProducts();
-      closeModal();
-    } catch (error) {
-      console.error('Unexpected save error:', error);
-      alert('Something went wrong while saving.');
-    } finally {
-      setSaving(false);
+      setItems((prev) => [newItem, ...prev]);
     }
+
+    closeModal();
   };
 
-  const handleDeleteProduct = async (id: string) => {
+  const handleDeleteProduct = (id: number) => {
     const confirmed = window.confirm('Delete this product?');
     if (!confirmed) return;
 
-    try {
-      const { error } = await supabase
-        .from('merchandise_products')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        console.error('Error deleting product:', error);
-        alert('Could not delete product.');
-        return;
-      }
-
-      await fetchProducts();
-    } catch (error) {
-      console.error('Unexpected delete error:', error);
-      alert('Something went wrong while deleting.');
-    }
+    setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
   return (
@@ -252,123 +200,117 @@ export function MerchandiseAdmin() {
         <div className="bg-slate-50 rounded-lg p-4 border">
           <p className="text-sm text-gray-600">Active Products</p>
           <p className="text-2xl font-bold text-green-600">
-            {items.filter((item) => Boolean(item.active)).length}
+            {items.filter((item) => item.active).length}
           </p>
         </div>
 
         <div className="bg-slate-50 rounded-lg p-4 border">
           <p className="text-sm text-gray-600">Low Inventory</p>
           <p className="text-2xl font-bold text-orange-600">
-            {items.filter((item) => safeNumber(item.inventory, 0) <= 10).length}
+            {items.filter((item) => item.inventory <= 10).length}
           </p>
         </div>
       </div>
 
-      {loading ? (
-        <div className="p-8 text-center text-gray-500">Loading merchandise...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Product</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Category</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Price</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Inventory</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Images</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
-              </tr>
-            </thead>
+      <div className="overflow-x-auto">
+        <table className="w-full border border-gray-200 rounded-lg overflow-hidden">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Product</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Category</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Price</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Inventory</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Images</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Status</th>
+              <th className="px-4 py-3 text-left text-sm font-semibold text-gray-600">Actions</th>
+            </tr>
+          </thead>
 
-            <tbody className="divide-y divide-gray-200">
-              {items.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      {item.main_image ? (
-                        <img
-                          src={item.main_image}
-                          alt={item.name}
-                          className="w-10 h-10 object-cover rounded-lg border"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                      ) : (
-                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
-                          <Package className="w-5 h-5 text-gray-500" />
-                        </div>
-                      )}
-                      <span className="font-medium text-gray-900">{item.name}</span>
-                    </div>
-                  </td>
+          <tbody className="divide-y divide-gray-200">
+            {items.map((item) => (
+              <tr key={item.id} className="hover:bg-gray-50">
+                <td className="px-4 py-4">
+                  <div className="flex items-center gap-3">
+                    {item.mainImage ? (
+                      <img
+                        src={item.mainImage}
+                        alt={item.name}
+                        className="w-10 h-10 object-cover rounded-lg border"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center">
+                        <Package className="w-5 h-5 text-gray-500" />
+                      </div>
+                    )}
+                    <span className="font-medium text-gray-900">{item.name}</span>
+                  </div>
+                </td>
 
-                  <td className="px-4 py-4 text-gray-700">{item.category}</td>
-                  <td className="px-4 py-4 text-gray-700">
-                    ${safeNumber(item.price, 0).toFixed(2)}
-                  </td>
-                  <td className="px-4 py-4 text-gray-700">{safeNumber(item.inventory, 0)}</td>
+                <td className="px-4 py-4 text-gray-700">{item.category}</td>
+                <td className="px-4 py-4 text-gray-700">{item.price}</td>
+                <td className="px-4 py-4 text-gray-700">{item.inventory}</td>
 
-                  <td className="px-4 py-4 text-gray-700">
-                    <div className="flex items-center gap-2">
-                      <ImageIcon className="w-4 h-4 text-gray-500" />
-                      <span>{(item.main_image ? 1 : 0) + safeArray(item.gallery_images).length}</span>
-                    </div>
-                  </td>
+                <td className="px-4 py-4 text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-gray-500" />
+                    <span>{(item.mainImage ? 1 : 0) + item.galleryImages.length}</span>
+                  </div>
+                </td>
 
-                  <td className="px-4 py-4">
-                    <span
-                      className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                        item.active
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-200 text-gray-700'
-                      }`}
+                <td className="px-4 py-4">
+                  <span
+                    className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                      item.active
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-gray-200 text-gray-700'
+                    }`}
+                  >
+                    {item.active ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+
+                <td className="px-4 py-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openEditModal(item)}
+                      className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
+                      title="Edit product"
                     >
-                      {item.active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
+                      <Pencil className="w-4 h-4" />
+                    </button>
 
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => openEditModal(item)}
-                        className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
-                        title="Edit product"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
+                    <button
+                      onClick={() => handleDeleteProduct(item.id)}
+                      className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
+                      title="Delete product"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
 
-                      <button
-                        onClick={() => handleDeleteProduct(item.id)}
-                        className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"
-                        title="Delete product"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {items.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                    No merchandise products yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+            {items.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  No merchandise products yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {showProductModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b">
               <h3 className="text-2xl font-bold text-gray-900">
-                {editingId ? 'Edit Product' : 'Add Product'}
+                {editingId !== null ? 'Edit Product' : 'Add Product'}
               </h3>
               <button
                 onClick={closeModal}
@@ -442,10 +384,9 @@ export function MerchandiseAdmin() {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleSaveProduct}
-                  disabled={saving}
-                  className="px-5 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50"
+                  className="px-5 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
                 >
-                  {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Save Product'}
+                  {editingId !== null ? 'Save Changes' : 'Save Product'}
                 </button>
 
                 <button
