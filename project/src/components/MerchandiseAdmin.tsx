@@ -13,11 +13,11 @@ type MerchandiseItem = {
   id: string;
   name: string;
   category: string;
-  price: number;
-  inventory: number;
-  active: boolean;
+  price: number | string | null;
+  inventory: number | string | null;
+  active: boolean | null;
   main_image: string | null;
-  gallery_images: string[];
+  gallery_images: string[] | null;
 };
 
 type ProductForm = {
@@ -40,6 +40,15 @@ const emptyForm: ProductForm = {
   galleryImages: '',
 };
 
+const safeNumber = (value: unknown, fallback = 0): number => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+};
+
+const safeArray = (value: unknown): string[] => {
+  return Array.isArray(value) ? value.filter((v) => typeof v === 'string') : [];
+};
+
 export function MerchandiseAdmin() {
   const [items, setItems] = useState<MerchandiseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,25 +58,42 @@ export function MerchandiseAdmin() {
   const [form, setForm] = useState<ProductForm>(emptyForm);
 
   useEffect(() => {
-    fetchProducts();
+    void fetchProducts();
   }, []);
 
   const fetchProducts = async () => {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from('merchandise_products')
-      .select('*')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('merchandise_products')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error('Error loading merchandise products:', error);
-      alert('Could not load merchandise products.');
-    } else {
-      setItems((data || []) as MerchandiseItem[]);
+      if (error) {
+        console.error('Error loading merchandise products:', error);
+        setItems([]);
+        return;
+      }
+
+      const normalized = (data || []).map((item: any) => ({
+        id: String(item.id ?? ''),
+        name: item.name ?? '',
+        category: item.category ?? '',
+        price: safeNumber(item.price, 0),
+        inventory: safeNumber(item.inventory, 0),
+        active: Boolean(item.active),
+        main_image: item.main_image ?? '',
+        gallery_images: safeArray(item.gallery_images),
+      }));
+
+      setItems(normalized);
+    } catch (error) {
+      console.error('Unexpected merchandise load error:', error);
+      setItems([]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const handleInputChange = (field: keyof ProductForm, value: string | boolean) => {
@@ -93,13 +119,13 @@ export function MerchandiseAdmin() {
   const openEditModal = (item: MerchandiseItem) => {
     setEditingId(item.id);
     setForm({
-      name: item.name,
-      category: item.category,
-      price: String(item.price),
-      inventory: String(item.inventory),
-      active: item.active,
+      name: item.name || '',
+      category: item.category || '',
+      price: String(safeNumber(item.price, 0)),
+      inventory: String(safeNumber(item.inventory, 0)),
+      active: Boolean(item.active),
       mainImage: item.main_image || '',
-      galleryImages: (item.gallery_images || []).join(', '),
+      galleryImages: safeArray(item.gallery_images).join(', '),
     });
     setShowProductModal(true);
   };
@@ -121,8 +147,8 @@ export function MerchandiseAdmin() {
       return;
     }
 
-    const priceNumber = Number(form.price);
-    const inventoryNumber = Number(form.inventory);
+    const priceNumber = safeNumber(form.price, NaN);
+    const inventoryNumber = safeNumber(form.inventory, NaN);
 
     if (Number.isNaN(priceNumber) || Number.isNaN(inventoryNumber)) {
       alert('Price and inventory must be valid numbers.');
@@ -141,52 +167,61 @@ export function MerchandiseAdmin() {
 
     setSaving(true);
 
-    if (editingId) {
-      const { error } = await supabase
-        .from('merchandise_products')
-        .update(payload)
-        .eq('id', editingId);
+    try {
+      if (editingId) {
+        const { error } = await supabase
+          .from('merchandise_products')
+          .update(payload)
+          .eq('id', editingId);
 
-      if (error) {
-        console.error('Error updating product:', error);
-        alert('Could not update product.');
-        setSaving(false);
-        return;
-      }
-    } else {
-      const { error } = await supabase
-        .from('merchandise_products')
-        .insert(payload);
+        if (error) {
+          console.error('Error updating product:', error);
+          alert('Could not update product.');
+          return;
+        }
+      } else {
+        const { error } = await supabase
+          .from('merchandise_products')
+          .insert(payload);
 
-      if (error) {
-        console.error('Error creating product:', error);
-        alert('Could not create product.');
-        setSaving(false);
-        return;
+        if (error) {
+          console.error('Error creating product:', error);
+          alert('Could not create product.');
+          return;
+        }
       }
+
+      await fetchProducts();
+      closeModal();
+    } catch (error) {
+      console.error('Unexpected save error:', error);
+      alert('Something went wrong while saving.');
+    } finally {
+      setSaving(false);
     }
-
-    await fetchProducts();
-    setSaving(false);
-    closeModal();
   };
 
   const handleDeleteProduct = async (id: string) => {
     const confirmed = window.confirm('Delete this product?');
     if (!confirmed) return;
 
-    const { error } = await supabase
-      .from('merchandise_products')
-      .delete()
-      .eq('id', id);
+    try {
+      const { error } = await supabase
+        .from('merchandise_products')
+        .delete()
+        .eq('id', id);
 
-    if (error) {
-      console.error('Error deleting product:', error);
-      alert('Could not delete product.');
-      return;
+      if (error) {
+        console.error('Error deleting product:', error);
+        alert('Could not delete product.');
+        return;
+      }
+
+      await fetchProducts();
+    } catch (error) {
+      console.error('Unexpected delete error:', error);
+      alert('Something went wrong while deleting.');
     }
-
-    await fetchProducts();
   };
 
   return (
@@ -217,14 +252,14 @@ export function MerchandiseAdmin() {
         <div className="bg-slate-50 rounded-lg p-4 border">
           <p className="text-sm text-gray-600">Active Products</p>
           <p className="text-2xl font-bold text-green-600">
-            {items.filter((item) => item.active).length}
+            {items.filter((item) => Boolean(item.active)).length}
           </p>
         </div>
 
         <div className="bg-slate-50 rounded-lg p-4 border">
           <p className="text-sm text-gray-600">Low Inventory</p>
           <p className="text-2xl font-bold text-orange-600">
-            {items.filter((item) => item.inventory <= 10).length}
+            {items.filter((item) => safeNumber(item.inventory, 0) <= 10).length}
           </p>
         </div>
       </div>
@@ -270,13 +305,15 @@ export function MerchandiseAdmin() {
                   </td>
 
                   <td className="px-4 py-4 text-gray-700">{item.category}</td>
-                  <td className="px-4 py-4 text-gray-700">${item.price.toFixed(2)}</td>
-                  <td className="px-4 py-4 text-gray-700">{item.inventory}</td>
+                  <td className="px-4 py-4 text-gray-700">
+                    ${safeNumber(item.price, 0).toFixed(2)}
+                  </td>
+                  <td className="px-4 py-4 text-gray-700">{safeNumber(item.inventory, 0)}</td>
 
                   <td className="px-4 py-4 text-gray-700">
                     <div className="flex items-center gap-2">
                       <ImageIcon className="w-4 h-4 text-gray-500" />
-                      <span>{(item.main_image ? 1 : 0) + (item.gallery_images?.length || 0)}</span>
+                      <span>{(item.main_image ? 1 : 0) + safeArray(item.gallery_images).length}</span>
                     </div>
                   </td>
 
