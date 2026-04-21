@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Calendar, Users, Phone, Mail, User, Tag } from 'lucide-react';
+import { X, Calendar, Users, Phone, Mail, User } from 'lucide-react';
 import type { Property, RentalBooking } from '../types';
 import { supabase } from '../lib/supabase';
 import { calculateRentalTaxes, formatCurrency } from '../lib/tax-calculations';
@@ -23,10 +23,7 @@ export default function PropertyBookingModal({
     guests: 1,
     special_requests: '',
   });
-  const [promoCode, setPromoCode] = useState('');
-  const [promoDiscount, setPromoDiscount] = useState(0);
-  const [promoMessage, setPromoMessage] = useState('');
-  const [promoApplied, setPromoApplied] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -47,25 +44,6 @@ export default function PropertyBookingModal({
         special_requests: '',
       });
 
-      // Check for promo code in URL
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlPromoCode = urlParams.get('promo') || urlParams.get('code') || urlParams.get('PROMO') || urlParams.get('CODE');
-
-      if (urlPromoCode && urlPromoCode.trim()) {
-        setPromoCode(urlPromoCode.toUpperCase().trim());
-      } else {
-        setPromoCode('');
-      }
-
-      // Clean up URL parameters
-      if (window.location.search) {
-        const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, '', cleanUrl);
-      }
-
-      setPromoDiscount(0);
-      setPromoApplied(false);
-      setPromoMessage('');
       setError('');
     }
   }, [property]);
@@ -74,59 +52,22 @@ export default function PropertyBookingModal({
 
   const calculateNights = () => {
     if (!formData.check_in_date || !formData.check_out_date) return 0;
+
     const checkIn = new Date(formData.check_in_date);
     const checkOut = new Date(formData.check_out_date);
-    const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+    const nights = Math.ceil(
+      (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
     return nights > 0 ? nights : 0;
   };
 
   const totalNights = calculateNights();
   const cleaningFee = property.cleaning_fee || 150;
-  const rentalSubtotal = (totalNights * property.price_per_night) + cleaningFee;
-  const discountAmount = promoApplied ? (rentalSubtotal * promoDiscount) / 100 : 0;
-  const subtotalAfterDiscount = rentalSubtotal - discountAmount;
-  const taxes = calculateRentalTaxes(subtotalAfterDiscount);
+  const rentalSubtotal = totalNights * property.price_per_night + cleaningFee;
+  const taxes = calculateRentalTaxes(rentalSubtotal);
   const securityDeposit = 500;
   const totalPrice = taxes.grandTotal + securityDeposit;
-
-  const handleApplyPromoCode = async () => {
-    if (!promoCode.trim()) {
-      setPromoMessage('Please enter a promo code');
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase.rpc('validate_promo_code', {
-        code_text: promoCode.trim(),
-        applies_to_type: 'properties'
-      });
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const result = data[0];
-        if (result.is_valid) {
-          setPromoDiscount(parseFloat(result.discount_value) || 0);
-          setPromoApplied(true);
-          setPromoMessage(result.message);
-        } else {
-          setPromoDiscount(0);
-          setPromoApplied(false);
-          setPromoMessage(result.message);
-        }
-      }
-    } catch (err) {
-      console.error('Promo code error:', err);
-      setPromoMessage('Failed to validate promo code');
-    }
-  };
-
-  const handleRemovePromoCode = () => {
-    setPromoCode('');
-    setPromoDiscount(0);
-    setPromoApplied(false);
-    setPromoMessage('');
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,7 +92,6 @@ export default function PropertyBookingModal({
       checkIn.setHours(0, 0, 0, 0);
       checkOut.setHours(0, 0, 0, 0);
 
-      // Check rental bookings
       const { data: existingBookings, error: checkError } = await supabase
         .from('rental_bookings')
         .select('id')
@@ -169,7 +109,6 @@ export default function PropertyBookingModal({
         return;
       }
 
-      // Check external calendar events (Airbnb, etc.)
       const { data: externalEvents, error: externalError } = await supabase
         .from('external_calendar_events')
         .select('id, start_date, end_date')
@@ -213,12 +152,6 @@ export default function PropertyBookingModal({
 
       if (insertError) throw insertError;
 
-      if (promoApplied && promoCode) {
-        await supabase.rpc('increment_promo_code_usage', {
-          code_text: promoCode.trim()
-        });
-      }
-
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/booking-checkout`,
         {
@@ -258,6 +191,7 @@ export default function PropertyBookingModal({
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700 transition-colors"
+            type="button"
           >
             <X className="w-6 h-6" />
           </button>
@@ -274,7 +208,9 @@ export default function PropertyBookingModal({
                   $500 Refundable Security Deposit Required
                 </h3>
                 <p className="text-yellow-800 text-sm leading-relaxed">
-                  A $500 security deposit is required for all vacation rental bookings. This deposit will be collected separately and fully refunded within 7 days after checkout, provided there is no damage to the property.
+                  A $500 security deposit is required for all vacation rental bookings. This
+                  deposit will be collected separately and fully refunded within 7 days after
+                  checkout, provided there is no damage to the property.
                 </p>
               </div>
             </div>
@@ -283,59 +219,63 @@ export default function PropertyBookingModal({
           <div className="bg-blue-50 p-4 rounded-lg">
             <div className="flex justify-between items-center mb-2">
               <span className="text-gray-700">Price per night:</span>
-              <span className="text-xl font-bold text-gray-900">
-                ${property.price_per_night}
-              </span>
+              <span className="text-xl font-bold text-gray-900">${property.price_per_night}</span>
             </div>
+
             {totalNights > 0 && (
               <>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-700">Number of nights:</span>
                   <span className="font-semibold text-gray-900">{totalNights}</span>
                 </div>
+
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-700">Room total:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(totalNights * property.price_per_night)}</span>
+                  <span className="font-semibold text-gray-900">
+                    {formatCurrency(totalNights * property.price_per_night)}
+                  </span>
                 </div>
+
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-700">Cleaning fee:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(cleaningFee)}</span>
+                  <span className="font-semibold text-gray-900">
+                    {formatCurrency(cleaningFee)}
+                  </span>
                 </div>
+
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-700 font-medium">Subtotal:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(rentalSubtotal)}</span>
+                  <span className="font-semibold text-gray-900">
+                    {formatCurrency(rentalSubtotal)}
+                  </span>
                 </div>
-                {promoApplied && (
-                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                    <span className="text-green-700 font-medium">Discount ({promoDiscount}%):</span>
-                    <span className="font-semibold text-green-700">-{formatCurrency(discountAmount)}</span>
-                  </div>
-                )}
-                {promoApplied && (
-                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                    <span className="text-gray-700 font-medium">Subtotal after discount:</span>
-                    <span className="font-semibold text-gray-900">{formatCurrency(taxes.subtotal)}</span>
-                  </div>
-                )}
-                {!promoApplied && (
-                  <div className="mb-2 pb-2 border-b border-blue-200"></div>
-                )}
+
+                <div className="mb-2 pb-2 border-b border-blue-200"></div>
+
                 <div className="flex justify-between items-center mb-1 text-sm">
                   <span className="text-gray-600">Sales tax (6.5%):</span>
                   <span className="text-gray-900">{formatCurrency(taxes.salesTax)}</span>
                 </div>
+
                 <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200 text-sm">
                   <span className="text-gray-600">Lodging tax (5%):</span>
                   <span className="text-gray-900">{formatCurrency(taxes.lodgingTax)}</span>
                 </div>
+
                 <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
                   <span className="text-gray-700 font-medium">Total with taxes:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(taxes.grandTotal)}</span>
+                  <span className="font-semibold text-gray-900">
+                    {formatCurrency(taxes.grandTotal)}
+                  </span>
                 </div>
+
                 <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                  <span className="text-yellow-700 font-medium">Security deposit (refundable):</span>
+                  <span className="text-yellow-700 font-medium">
+                    Security deposit (refundable):
+                  </span>
                   <span className="font-semibold text-yellow-700">$500.00</span>
                 </div>
+
                 <div className="flex justify-between items-center pt-2">
                   <span className="text-lg font-semibold text-gray-900">Total:</span>
                   <span className="text-2xl font-bold text-blue-600">
@@ -400,13 +340,11 @@ export default function PropertyBookingModal({
               max={property.max_guests}
               value={formData.guests}
               onChange={(e) =>
-                setFormData({ ...formData, guests: parseInt(e.target.value) })
+                setFormData({ ...formData, guests: parseInt(e.target.value, 10) || 1 })
               }
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-            <p className="text-sm text-gray-500 mt-1">
-              Maximum {property.max_guests} guests
-            </p>
+            <p className="text-sm text-gray-500 mt-1">Maximum {property.max_guests} guests</p>
           </div>
 
           <div>
@@ -463,45 +401,6 @@ export default function PropertyBookingModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Tag className="w-4 h-4 inline mr-2" />
-              Promo Code (Optional)
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                disabled={promoApplied}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed uppercase"
-                placeholder="Enter promo code"
-              />
-              {!promoApplied ? (
-                <button
-                  type="button"
-                  onClick={handleApplyPromoCode}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors whitespace-nowrap"
-                >
-                  Apply
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleRemovePromoCode}
-                  className="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors whitespace-nowrap"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-            {promoMessage && (
-              <p className={`text-sm mt-2 ${promoApplied ? 'text-green-600' : 'text-red-600'}`}>
-                {promoMessage}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
               Special Requests (Optional)
             </label>
             <textarea
@@ -525,7 +424,9 @@ export default function PropertyBookingModal({
               <li>All guests must be registered prior to arrival</li>
             </ul>
             <p className="pt-2 border-t border-gray-300 mt-3">
-              By proceeding with this booking, you agree to our rental terms and conditions, including the security deposit policy. You will be contacted separately for the security deposit collection.
+              By proceeding with this booking, you agree to our rental terms and conditions,
+              including the security deposit policy. You will be contacted separately for the
+              security deposit collection.
             </p>
           </div>
 

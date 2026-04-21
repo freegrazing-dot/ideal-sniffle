@@ -1,543 +1,206 @@
-import { useState, useEffect } from 'react';
-import { X, Calendar, Users, Phone, Mail, User, Tag } from 'lucide-react';
-import type { Property, RentalBooking } from '../types';
-import { supabase } from '../lib/supabase';
-import { calculateRentalTaxes, formatCurrency } from '../lib/tax-calculations';
+import { useState, useEffect } from 'react'
+import { X, Calendar, Users } from 'lucide-react'
+import type { Property } from '../types'
+import { calculateRentalTaxes, formatCurrency } from '../lib/tax-calculations'
+import { useCart } from '../lib/cart-context'
 
 interface PropertyBookingModalProps {
-  property: Property | null;
-  onClose: () => void;
-  onSuccess: () => void;
+  property: Property | null
+  onClose: () => void
 }
 
 export default function PropertyBookingModal({
   property,
-  onClose,
+  onClose
 }: PropertyBookingModalProps) {
-  const [formData, setFormData] = useState({
-    customer_name: '',
-    customer_email: '',
-    customer_phone: '',
-    check_in_date: '',
-    check_out_date: '',
-    guests: 1,
-    special_requests: '',
-  });
-  const [promoCode, setPromoCode] = useState('');
-  const [promoDiscount, setPromoDiscount] = useState(0);
-  const [promoMessage, setPromoMessage] = useState('');
-  const [promoApplied, setPromoApplied] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+
+  const { addItem } = useCart()
+
+  const [checkIn, setCheckIn] = useState('')
+  const [checkOut, setCheckOut] = useState('')
+  const [guests, setGuests] = useState(1)
 
   useEffect(() => {
-    if (property) {
-      const today = new Date();
-      today.setDate(today.getDate() + 1);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+    if (!property) return
 
-      setFormData({
-        customer_name: '',
-        customer_email: '',
-        customer_phone: '',
-        check_in_date: today.toISOString().split('T')[0],
-        check_out_date: tomorrow.toISOString().split('T')[0],
-        guests: 1,
-        special_requests: '',
-      });
+    const today = new Date()
+    today.setDate(today.getDate() + 1)
 
-      // Check for promo code in URL
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlPromoCode = urlParams.get('promo') || urlParams.get('code') || urlParams.get('PROMO') || urlParams.get('CODE');
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
 
-      if (urlPromoCode && urlPromoCode.trim()) {
-        setPromoCode(urlPromoCode.toUpperCase().trim());
-      } else {
-        setPromoCode('');
-      }
+    setCheckIn(today.toISOString().split('T')[0])
+    setCheckOut(tomorrow.toISOString().split('T')[0])
+    setGuests(1)
 
-      // Clean up URL parameters
-      if (window.location.search) {
-        const cleanUrl = window.location.pathname;
-        window.history.replaceState({}, '', cleanUrl);
-      }
+  }, [property])
 
-      setPromoDiscount(0);
-      setPromoApplied(false);
-      setPromoMessage('');
-      setError('');
-    }
-  }, [property]);
+  if (!property) return null
 
-  if (!property) return null;
+  const nights = Math.max(
+    0,
+    Math.ceil(
+      (new Date(checkOut).getTime() - new Date(checkIn).getTime())
+      / (1000 * 60 * 60 * 24)
+    )
+  )
 
-  const calculateNights = () => {
-    if (!formData.check_in_date || !formData.check_out_date) return 0;
-    const checkIn = new Date(formData.check_in_date);
-    const checkOut = new Date(formData.check_out_date);
-    const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
-    return nights > 0 ? nights : 0;
-  };
+  const cleaningFee = property.cleaning_fee || 150
 
-  const totalNights = calculateNights();
-  const cleaningFee = property.cleaning_fee || 150;
-  const rentalSubtotal = (totalNights * property.price_per_night) + cleaningFee;
-  const discountAmount = promoApplied ? (rentalSubtotal * promoDiscount) / 100 : 0;
-  const subtotalAfterDiscount = rentalSubtotal - discountAmount;
-  const taxes = calculateRentalTaxes(subtotalAfterDiscount);
-  const securityDeposit = 500;
-  const totalPrice = taxes.grandTotal + securityDeposit;
+  const subtotal =
+    nights * property.price_per_night +
+    cleaningFee
 
-  const handleApplyPromoCode = async () => {
-    if (!promoCode.trim()) {
-      setPromoMessage('Please enter a promo code');
-      return;
-    }
+  const taxes = calculateRentalTaxes(subtotal)
 
-    try {
-      const { data, error } = await supabase.rpc('validate_promo_code', {
-        code_text: promoCode.trim(),
-        applies_to_type: 'properties'
-      });
+  const deposit = 500
 
-      if (error) throw error;
+  const total =
+    taxes.grandTotal + deposit
 
-      if (data && data.length > 0) {
-        const result = data[0];
-        if (result.is_valid) {
-          setPromoDiscount(parseFloat(result.discount_value) || 0);
-          setPromoApplied(true);
-          setPromoMessage(result.message);
-        } else {
-          setPromoDiscount(0);
-          setPromoApplied(false);
-          setPromoMessage(result.message);
-        }
-      }
-    } catch (err) {
-      console.error('Promo code error:', err);
-      setPromoMessage('Failed to validate promo code');
-    }
-  };
+  function handleAddToCart() {
 
-  const handleRemovePromoCode = () => {
-    setPromoCode('');
-    setPromoDiscount(0);
-    setPromoApplied(false);
-    setPromoMessage('');
-  };
+    if (nights <= 0) return
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+    addItem({
 
-    if (totalNights <= 0) {
-      setError('Check-out date must be after check-in date');
-      setLoading(false);
-      return;
-    }
+      id: `${property.id}-${checkIn}-${checkOut}`,
 
-    if (formData.guests > property.max_guests) {
-      setError(`This property can accommodate a maximum of ${property.max_guests} guests`);
-      setLoading(false);
-      return;
-    }
+      type: 'property',
 
-    try {
-      const checkIn = new Date(formData.check_in_date);
-      const checkOut = new Date(formData.check_out_date);
-      checkIn.setHours(0, 0, 0, 0);
-      checkOut.setHours(0, 0, 0, 0);
+      property,
 
-      // Check rental bookings
-      const { data: existingBookings, error: checkError } = await supabase
-        .from('rental_bookings')
-        .select('id')
-        .eq('property_id', property.id)
-        .in('status', ['pending', 'confirmed'])
-        .or(
-          `and(check_in_date.lte.${formData.check_out_date},check_out_date.gte.${formData.check_in_date})`
-        );
+      price: taxes.grandTotal,
 
-      if (checkError) throw checkError;
+      guests,
 
-      if (existingBookings && existingBookings.length > 0) {
-        setError('This property is not available for the selected dates');
-        setLoading(false);
-        return;
-      }
+      checkIn,
+      checkOut,
 
-      // Check external calendar events (Airbnb, etc.)
-      const { data: externalEvents, error: externalError } = await supabase
-        .from('external_calendar_events')
-        .select('id, start_date, end_date')
-        .eq('property_id', property.id)
-        .or(
-          `and(start_date.lt.${formData.check_out_date},end_date.gt.${formData.check_in_date})`
-        );
+      quantity: 1
 
-      if (externalError) throw externalError;
+    })
 
-      if (externalEvents && externalEvents.length > 0) {
-        setError('This property is not available for the selected dates');
-        setLoading(false);
-        return;
-      }
-
-      const booking: RentalBooking = {
-        property_id: property.id,
-        customer_name: formData.customer_name,
-        customer_email: formData.customer_email,
-        customer_phone: formData.customer_phone || '',
-        check_in_date: formData.check_in_date,
-        check_out_date: formData.check_out_date,
-        guests: formData.guests,
-        total_nights: totalNights,
-        total_price: totalPrice,
-        subtotal: taxes.subtotal,
-        sales_tax: taxes.salesTax,
-        lodging_tax: taxes.lodgingTax,
-        tax_total: taxes.taxTotal,
-        special_requests: formData.special_requests,
-        status: 'pending',
-        payment_status: 'pending',
-      };
-
-      const { data, error: insertError } = await supabase
-        .from('rental_bookings')
-        .insert(booking)
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      if (promoApplied && promoCode) {
-        await supabase.rpc('increment_promo_code_usage', {
-          code_text: promoCode.trim()
-        });
-      }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/booking-checkout`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            bookingId: data.id,
-            bookingType: 'rental',
-            customerEmail: formData.customer_email,
-            amount: totalPrice,
-            description: `${property.name} - ${totalNights} nights`,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to create checkout session');
-      }
-
-      const { sessionUrl } = await response.json();
-      window.location.href = sessionUrl;
-    } catch (err) {
-      console.error('Booking error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create booking');
-      setLoading(false);
-    }
-  };
+    onClose()
+  }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-900">Book {property.name}</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 transition-colors"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div className="bg-yellow-50 border-2 border-yellow-400 p-4 rounded-lg mb-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center text-yellow-900 font-bold text-lg">
-                $
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-yellow-900 text-lg mb-1">
-                  $500 Refundable Security Deposit Required
-                </h3>
-                <p className="text-yellow-800 text-sm leading-relaxed">
-                  A $500 security deposit is required for all vacation rental bookings. This deposit will be collected separately and fully refunded within 7 days after checkout, provided there is no damage to the property.
-                </p>
-              </div>
-            </div>
-          </div>
+<div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
 
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-gray-700">Price per night:</span>
-              <span className="text-xl font-bold text-gray-900">
-                ${property.price_per_night}
-              </span>
-            </div>
-            {totalNights > 0 && (
-              <>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700">Number of nights:</span>
-                  <span className="font-semibold text-gray-900">{totalNights}</span>
-                </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700">Room total:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(totalNights * property.price_per_night)}</span>
-                </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700">Cleaning fee:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(cleaningFee)}</span>
-                </div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700 font-medium">Subtotal:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(rentalSubtotal)}</span>
-                </div>
-                {promoApplied && (
-                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                    <span className="text-green-700 font-medium">Discount ({promoDiscount}%):</span>
-                    <span className="font-semibold text-green-700">-{formatCurrency(discountAmount)}</span>
-                  </div>
-                )}
-                {promoApplied && (
-                  <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                    <span className="text-gray-700 font-medium">Subtotal after discount:</span>
-                    <span className="font-semibold text-gray-900">{formatCurrency(taxes.subtotal)}</span>
-                  </div>
-                )}
-                {!promoApplied && (
-                  <div className="mb-2 pb-2 border-b border-blue-200"></div>
-                )}
-                <div className="flex justify-between items-center mb-1 text-sm">
-                  <span className="text-gray-600">Sales tax (6.5%):</span>
-                  <span className="text-gray-900">{formatCurrency(taxes.salesTax)}</span>
-                </div>
-                <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200 text-sm">
-                  <span className="text-gray-600">Lodging tax (5%):</span>
-                  <span className="text-gray-900">{formatCurrency(taxes.lodgingTax)}</span>
-                </div>
-                <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                  <span className="text-gray-700 font-medium">Total with taxes:</span>
-                  <span className="font-semibold text-gray-900">{formatCurrency(taxes.grandTotal)}</span>
-                </div>
-                <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                  <span className="text-yellow-700 font-medium">Security deposit (refundable):</span>
-                  <span className="font-semibold text-yellow-700">$500.00</span>
-                </div>
-                <div className="flex justify-between items-center pt-2">
-                  <span className="text-lg font-semibold text-gray-900">Total:</span>
-                  <span className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(totalPrice)}
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
+<div className="bg-white rounded-xl w-full max-w-lg p-6 space-y-4">
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
+<div className="flex justify-between items-center">
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 inline mr-2" />
-                Check-in Date
-              </label>
-              <input
-                type="date"
-                required
-                min={new Date().toISOString().split('T')[0]}
-                value={formData.check_in_date}
-                onChange={(e) =>
-                  setFormData({ ...formData, check_in_date: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+<h2 className="text-xl font-bold">
+Book {property.name}
+</h2>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 inline mr-2" />
-                Check-out Date
-              </label>
-              <input
-                type="date"
-                required
-                min={formData.check_in_date}
-                value={formData.check_out_date}
-                onChange={(e) =>
-                  setFormData({ ...formData, check_out_date: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
+<button onClick={onClose}>
+<X/>
+</button>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Users className="w-4 h-4 inline mr-2" />
-              Number of Guests
-            </label>
-            <input
-              type="number"
-              required
-              min="1"
-              max={property.max_guests}
-              value={formData.guests}
-              onChange={(e) =>
-                setFormData({ ...formData, guests: parseInt(e.target.value) })
-              }
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Maximum {property.max_guests} guests
-            </p>
-          </div>
+</div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <User className="w-4 h-4 inline mr-2" />
-              Full Name
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.customer_name}
-              onChange={(e) =>
-                setFormData({ ...formData, customer_name: e.target.value })
-              }
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="John Doe"
-            />
-          </div>
+<div className="space-y-3">
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Mail className="w-4 h-4 inline mr-2" />
-                Email
-              </label>
-              <input
-                type="email"
-                required
-                value={formData.customer_email}
-                onChange={(e) =>
-                  setFormData({ ...formData, customer_email: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="john@example.com"
-              />
-            </div>
+<label>
+Check in
+</label>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Phone className="w-4 h-4 inline mr-2" />
-                Phone (Optional)
-              </label>
-              <input
-                type="tel"
-                value={formData.customer_phone}
-                onChange={(e) =>
-                  setFormData({ ...formData, customer_phone: e.target.value })
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="(555) 123-4567"
-              />
-            </div>
-          </div>
+<input
+type="date"
+value={checkIn}
+onChange={e => setCheckIn(e.target.value)}
+className="w-full border rounded p-2"
+/>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Tag className="w-4 h-4 inline mr-2" />
-              Promo Code (Optional)
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                disabled={promoApplied}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed uppercase"
-                placeholder="Enter promo code"
-              />
-              {!promoApplied ? (
-                <button
-                  type="button"
-                  onClick={handleApplyPromoCode}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors whitespace-nowrap"
-                >
-                  Apply
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleRemovePromoCode}
-                  className="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors whitespace-nowrap"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-            {promoMessage && (
-              <p className={`text-sm mt-2 ${promoApplied ? 'text-green-600' : 'text-red-600'}`}>
-                {promoMessage}
-              </p>
-            )}
-          </div>
+<label>
+Check out
+</label>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Special Requests (Optional)
-            </label>
-            <textarea
-              rows={3}
-              value={formData.special_requests}
-              onChange={(e) =>
-                setFormData({ ...formData, special_requests: e.target.value })
-              }
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Any special requests or requirements..."
-            />
-          </div>
+<input
+type="date"
+value={checkOut}
+onChange={e => setCheckOut(e.target.value)}
+className="w-full border rounded p-2"
+/>
 
-          <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg text-xs text-gray-600 space-y-2">
-            <p className="font-semibold text-gray-800">Important Information:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Check-in time is 4:00 PM, check-out time is 11:00 AM</li>
-              <li>No smoking allowed inside the property</li>
-              <li>Quiet hours are from 10:00 PM to 8:00 AM</li>
-              <li>Parties and events require prior approval</li>
-              <li>All guests must be registered prior to arrival</li>
-            </ul>
-            <p className="pt-2 border-t border-gray-300 mt-3">
-              By proceeding with this booking, you agree to our rental terms and conditions, including the security deposit policy. You will be contacted separately for the security deposit collection.
-            </p>
-          </div>
+<label>
+Guests
+</label>
 
-          <button
-            type="submit"
-            disabled={loading || totalNights <= 0}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Processing...' : `Proceed to Payment - $${totalPrice.toFixed(2)}`}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
+<input
+type="number"
+min={1}
+max={property.max_guests}
+value={guests}
+onChange={e => setGuests(parseInt(e.target.value))}
+className="w-full border rounded p-2"
+/>
+
+</div>
+
+<div className="bg-gray-50 p-3 rounded space-y-1 text-sm">
+
+<div className="flex justify-between">
+
+<span>Nights</span>
+
+<span>{nights}</span>
+
+</div>
+
+<div className="flex justify-between">
+
+<span>Subtotal</span>
+
+<span>{formatCurrency(subtotal)}</span>
+
+</div>
+
+<div className="flex justify-between">
+
+<span>Taxes</span>
+
+<span>{formatCurrency(taxes.taxTotal)}</span>
+
+</div>
+
+<div className="flex justify-between">
+
+<span>Security deposit hold</span>
+
+<span>$500</span>
+
+</div>
+
+<div className="flex justify-between font-bold text-lg pt-2 border-t">
+
+<span>Total</span>
+
+<span>{formatCurrency(total)}</span>
+
+</div>
+
+</div>
+
+<button
+
+onClick={handleAddToCart}
+
+className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold"
+
+>
+
+Continue to Checkout
+
+</button>
+
+</div>
+
+</div>
+
+  )
+
 }

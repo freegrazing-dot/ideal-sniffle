@@ -1,4 +1,8 @@
-import { useState, useEffect, Component, ReactNode, lazy, Suspense } from 'react';
+import Success from './pages/Success';
+import Login from './pages/Login';
+import WelcomeGuide from './pages/WelcomeGuide';
+import UploadBoatingCard from './pages/UploadBoatingCard';
+import { useState, useEffect, Component, ReactNode, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Home, Anchor } from 'lucide-react';
 import { ActivityCard } from './components/ActivityCard';
@@ -17,13 +21,9 @@ import { Activity, Property } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { useCart } from './lib/cart-context';
 import { NotFound } from './pages/NotFound';
-import { ProtectedAdminRoute } from './components/ProtectedAdminRoute';
 
-const Success = lazy(() => import('./pages/Success').then(m => ({ default: m.Success })));
-const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
-const WelcomeGuide = lazy(() => import('./pages/WelcomeGuide'));
-const UploadBoatingCard = lazy(() => import('./pages/UploadBoatingCard'));
-const AdminPanel = lazy(() => import('./components/AdminPanel').then(m => ({ default: m.AdminPanel })));
+import AdminPanel from './components/AdminPanel';
+
 interface SecurityDepositProduct {
   id: string;
   property_id: string;
@@ -31,7 +31,6 @@ interface SecurityDepositProduct {
   description: string;
   active: boolean;
 }
-
 interface MerchandiseItem {
   id: string;
   name: string;
@@ -341,24 +340,17 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gray-50">
       {showNavigation && <Navigation onCartClick={() => setIsCartModalOpen(true)} />}
-      <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-lg">Loading...</div></div>}>
+      <> 
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<Login />} />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedAdminRoute>
-                <AdminPanel />
-              </ProtectedAdminRoute>
-            }
-          />
+          <Route path="/admin" element={<AdminPanel />} />
           <Route path="/success" element={<Success />} />
           <Route path="/welcome-guide" element={<WelcomeGuide />} />
           <Route path="/upload-boating-card" element={<UploadBoatingCard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-      </Suspense>
+       </>
       {showNavigation && isCartModalOpen && (
         <CartModal
           isOpen={isCartModalOpen}

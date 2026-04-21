@@ -17,13 +17,13 @@ import { Activity, Property } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { useCart } from './lib/cart-context';
 import { NotFound } from './pages/NotFound';
-import { ProtectedAdminRoute } from './components/ProtectedAdminRoute';
+import AdminPanel from './components/AdminPanel';
 
-const Success = lazy(() => import('./pages/Success').then(m => ({ default: m.Success })));
-const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
+const Success = lazy(() => import('./pages/Success'));
+const Login = lazy(() => import('./pages/Login'));
 const WelcomeGuide = lazy(() => import('./pages/WelcomeGuide'));
 const UploadBoatingCard = lazy(() => import('./pages/UploadBoatingCard'));
-const AdminPanel = lazy(() => import('./components/AdminPanel').then(m => ({ default: m.AdminPanel })));
+
 interface SecurityDepositProduct {
   id: string;
   property_id: string;
@@ -61,48 +61,109 @@ function HomePage() {
   const [loading, setLoading] = useState(true);
   const [modalOpenTimestamp, setModalOpenTimestamp] = useState(0);
   const { addSecurityDepositItem, addMerchandiseItem } = useCart();
+useEffect(() => {
+  if (!isSupabaseConfigured) {
+    setLoading(false);
+    return;
+  }
 
-  useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setLoading(false);
-      return;
+  fetchData();
+
+  if (window.location.search) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const promoCode =
+      urlParams.get('promo') ||
+      urlParams.get('code') ||
+      urlParams.get('PROMO') ||
+      urlParams.get('CODE');
+
+    if (urlParams.toString() !== (promoCode ? `promo=${promoCode}` : '')) {
+      const cleanUrl = promoCode
+        ? `${window.location.pathname}?promo=${encodeURIComponent(promoCode)}`
+        : window.location.pathname;
+      window.history.replaceState({}, '', cleanUrl);
     }
+  }
+
+  const handleFocus = () => {
     fetchData();
+  };
 
-    // Clean up any URL parameters on mount (except promo codes)
-    if (window.location.search) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const promoCode = urlParams.get('promo') || urlParams.get('code') || urlParams.get('PROMO') || urlParams.get('CODE');
+  window.addEventListener('focus', handleFocus);
 
-      // If there are any other params besides promo, clean them
-      if (urlParams.toString() !== (promoCode ? `promo=${promoCode}` : '')) {
-        const cleanUrl = promoCode ? `${window.location.pathname}?promo=${encodeURIComponent(promoCode)}` : window.location.pathname;
-        window.history.replaceState({}, '', cleanUrl);
-      }
-    }
-  }, []);
-
+  return () => {
+    window.removeEventListener('focus', handleFocus);
+  };
+}, []);
   const fetchData = async () => {
     try {
-      const [propertiesResult, activitiesResult, securityDepositsResult, merchandiseResult] = await Promise.all([
-        supabase.from('properties').select('*').eq('active', true).order('created_at'),
-        supabase.from('activities').select('*').eq('active', true).order('created_at'),
-        supabase.from('security_deposit_products').select('*').eq('active', true).order('created_at'),
-        supabase.from('merchandise_items').select('*').eq('active', true).order('created_at'),
-      ]);
+     const [
+  propertiesResult,
+  activitiesResult,
+  securityDepositsResult,
+  merchandiseResult
+] = await Promise.all([
+  supabase
+    .from('properties')
+    .select('*')
+    .eq('active', true)
+    .order('created_at'),
+
+  supabase
+    .from('activities')
+    .select(`
+      *,
+      activity_images (
+        image_url,
+        display_order
+      )
+    `)
+    .eq('active', true)
+    .order('created_at'),
+
+  supabase
+    .from('security_deposit_products')
+    .select('*')
+    .eq('active', true)
+    .order('created_at'),
+
+  supabase
+    .from('merchandise_items')
+    .select(`
+      *,
+      merchandise_item_images (
+        image_url,
+        display_order
+      )
+    `)
+    .eq('active', true)
+    .order('created_at')
+]);
 
       if (propertiesResult.error) {
         console.error('Properties error:', propertiesResult.error);
       } else {
-        setProperties(propertiesResult.data || []);
+        setProperties(
+  (propertiesResult.data || []).map((p: any) => ({
+    ...p,
+    name: p.title ?? p.name ?? ''
+  }))
+);
       }
-
-      if (activitiesResult.error) {
-        console.error('Activities error:', activitiesResult.error);
-      } else {
-        setActivities(activitiesResult.data || []);
-      }
-
+if (activitiesResult.error) {
+  console.error('Activities error:', activitiesResult.error);
+} else {
+  setActivities(
+    (activitiesResult.data || []).map((activity: any) => ({
+      ...activity,
+      name: activity.title ?? activity.name ?? '',
+      gallery_images:
+        (activity.activity_images || [])
+          .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
+          .map((img: any) => img.image_url),
+    }))
+  );
+}
       if (securityDepositsResult.error) {
         console.error('Security deposits error:', securityDepositsResult.error);
       } else {
@@ -112,10 +173,26 @@ function HomePage() {
       if (merchandiseResult.error) {
         console.error('Merchandise error:', merchandiseResult.error);
       } else {
-        setMerchandiseItems((merchandiseResult.data || []).map(item => ({
-          ...item,
-          price: typeof item.price === 'string' ? parseFloat(item.price) : item.price
-        })));
+        console.log('MERCH FROM ADMIN:', merchandiseResult.data);
+
+        setMerchandiseItems(
+  (merchandiseResult.data || []).map((item: any) => ({
+    id: item.id,
+    name: item.name ?? '',
+    description: item.description ?? '',
+    price: Number(item.price ?? 0),
+    category: item.category ?? 'Merch',
+    sizes: Array.isArray(item.sizes) ? item.sizes : [],
+    colors: Array.isArray(item.colors) ? item.colors : [],
+    image_url: item.image_url ?? '',
+    gallery_images:
+      (item.merchandise_item_images || [])
+        .sort((a:any,b:any)=>a.display_order-b.display_order)
+        .map((img:any)=>img.image_url),
+    stock_quantity: 10,
+    active: item.active ?? true
+  }))
+);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -141,17 +218,24 @@ function HomePage() {
   };
 
   const handleAddSecurityDeposit = async (product: SecurityDepositProduct) => {
-    const property = properties.find(p => p.id === product.property_id);
+    const property = properties.find((p) => p.id === product.property_id);
+
     await addSecurityDepositItem({
       propertyId: product.property_id,
       propertyName: property?.name || 'Property',
       depositAmount: product.deposit_amount,
-      description: product.description,
+      description: product.description
     });
+
     setIsCartModalOpen(true);
   };
 
-  const handleAddMerchandise = async (item: MerchandiseItem, size: string, color: string, quantity: number) => {
+  const handleAddMerchandise = async (
+    item: MerchandiseItem,
+    size: string,
+    color: string,
+    quantity: number
+  ) => {
     await addMerchandiseItem({
       merchandiseId: item.id,
       name: item.name,
@@ -159,8 +243,9 @@ function HomePage() {
       color,
       quantity,
       price: item.price,
-      description: item.description,
+      description: item.description
     });
+
     setIsCartModalOpen(true);
   };
 
@@ -251,7 +336,8 @@ function HomePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {securityDepositProducts.map((product) => {
-                const property = properties.find(p => p.id === product.property_id);
+                const property = properties.find((p) => p.id === product.property_id);
+
                 return (
                   <SecurityDepositCard
                     key={product.id}
@@ -274,7 +360,6 @@ function HomePage() {
       )}
 
       <Footer />
-
 
       {isPropertyModalOpen && (
         <AddPropertyToCartModal
@@ -341,24 +426,25 @@ function AppContent() {
   return (
     <div className="min-h-screen bg-gray-50">
       {showNavigation && <Navigation onCartClick={() => setIsCartModalOpen(true)} />}
-      <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="text-lg">Loading...</div></div>}>
+
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-lg">Loading...</div>
+          </div>
+        }
+      >
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<Login />} />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedAdminRoute>
-                <AdminPanel />
-              </ProtectedAdminRoute>
-            }
-          />
+          <Route path="/admin" element={<AdminPanel />} />
           <Route path="/success" element={<Success />} />
           <Route path="/welcome-guide" element={<WelcomeGuide />} />
           <Route path="/upload-boating-card" element={<UploadBoatingCard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
+
       {showNavigation && isCartModalOpen && (
         <CartModal
           isOpen={isCartModalOpen}

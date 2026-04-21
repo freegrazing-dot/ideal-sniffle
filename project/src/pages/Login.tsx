@@ -1,4 +1,4 @@
-import { useState } from 'react'
+export default function Login() {
 import { LoginForm } from '../components/auth/LoginForm'
 import { SignupForm } from '../components/auth/SignupForm'
 

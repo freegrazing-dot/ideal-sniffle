@@ -5,11 +5,14 @@ export interface Activity {
   duration_hours: number;
   capacity: number;
   base_price: number;
+
   image_url: string;
+
+  gallery_images?: string[];
+
   active: boolean;
   created_at: string;
 }
-
 export interface Booking {
   id?: string;
   activity_id: string;
@@ -64,6 +67,7 @@ export interface Property {
   id: string;
   name: string;
   description: string;
+  short_description?: string;
   location: string;
   price_per_night: number;
   cleaning_fee?: number;
@@ -78,6 +82,8 @@ export interface Property {
   last_sync_at?: string;
   created_at: string;
   updated_at: string;
+  
+  
 }
 
 export interface ExternalCalendarEvent {

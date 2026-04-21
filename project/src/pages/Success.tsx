@@ -33,7 +33,7 @@ interface PropertyBooking {
 
 type Booking = ActivityBooking | PropertyBooking
 
-export function Success() {
+export default function Success() {
   const [booking, setBooking] = useState<Booking | null>(null)
   const [loading, setLoading] = useState(true)
 

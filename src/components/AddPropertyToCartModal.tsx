@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Users, ShoppingCart, Tag } from 'lucide-react';
+import { X, Users, ShoppingCart } from 'lucide-react';
 import type { Property } from '../types';
 import { useCart } from '../lib/cart-context';
 import PropertyCalendar from './PropertyCalendar';
 import { calculateRentalPrice, checkAvailability } from '../lib/pricing';
-import { supabase } from '../lib/supabase';
 
 interface AddPropertyToCartModalProps {
   property: Property | null;
@@ -18,6 +17,7 @@ export default function AddPropertyToCartModal({
   onSuccess,
 }: AddPropertyToCartModalProps) {
   const { addPropertyItem } = useCart();
+
   const [checkInDate, setCheckInDate] = useState<string | null>(null);
   const [checkOutDate, setCheckOutDate] = useState<string | null>(null);
   const [guests, setGuests] = useState(1);
@@ -31,12 +31,7 @@ export default function AddPropertyToCartModal({
   const [subtotal, setSubtotal] = useState(0);
   const [depositAcknowledged, setDepositAcknowledged] = useState(false);
   const [calendarKey, setCalendarKey] = useState(0);
-  const [promoCode, setPromoCode] = useState('');
-  const [promoDiscount, setPromoDiscount] = useState(0);
-  const [promoMessage, setPromoMessage] = useState('');
-  const [promoApplied, setPromoApplied] = useState(false);
 
-  // Reset state when property changes or is opened
   useEffect(() => {
     if (property) {
       setCheckInDate(null);
@@ -50,27 +45,13 @@ export default function AddPropertyToCartModal({
       setTotalPrice(0);
       setCleaningFee(0);
       setSubtotal(0);
-      setCalendarKey(prev => prev + 1);
-
-      // Check for promo code in URL
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlPromoCode = urlParams.get('promo') || urlParams.get('code') || urlParams.get('PROMO') || urlParams.get('CODE');
-
-      if (urlPromoCode && urlPromoCode.trim()) {
-        setPromoCode(urlPromoCode.toUpperCase().trim());
-      } else {
-        setPromoCode('');
-      }
-
-      setPromoDiscount(0);
-      setPromoApplied(false);
-      setPromoMessage('');
+      setCalendarKey((prev) => prev + 1);
     }
   }, [property]);
 
   useEffect(() => {
     if (checkInDate && checkOutDate && property) {
-      calculatePrice();
+      void calculatePrice();
     }
   }, [checkInDate, checkOutDate, property]);
 
@@ -80,17 +61,20 @@ export default function AddPropertyToCartModal({
     if (!checkInDate || !checkOutDate || !property) return;
 
     try {
-      const { totalPrice: calculatedPrice, nightlyBreakdown, cleaningFee: cleaningFeeAmount, subtotal: subtotalAmount } = await calculateRentalPrice(
-        property,
-        checkInDate,
-        checkOutDate
-      );
+      const {
+        totalPrice: calculatedPrice,
+        nightlyBreakdown,
+        cleaningFee: cleaningFeeAmount,
+        subtotal: subtotalAmount,
+      } = await calculateRentalPrice(property, checkInDate, checkOutDate);
+
       setTotalPrice(calculatedPrice);
       setPriceBreakdown(nightlyBreakdown);
       setCleaningFee(cleaningFeeAmount);
       setSubtotal(subtotalAmount);
     } catch (err) {
       console.error('Error calculating price:', err);
+      setError('Unable to calculate rental price for those dates');
     }
   };
 
@@ -102,48 +86,7 @@ export default function AddPropertyToCartModal({
 
   const totalNights = priceBreakdown.length;
   const securityDeposit = 500;
-  const discountAmount = promoApplied ? (totalPrice * promoDiscount) / 100 : 0;
-  const priceAfterDiscount = totalPrice - discountAmount;
-  const grandTotal = priceAfterDiscount + securityDeposit;
-
-  const handleApplyPromoCode = async () => {
-    if (!promoCode.trim()) {
-      setPromoMessage('Please enter a promo code');
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase.rpc('validate_promo_code', {
-        code_text: promoCode.trim(),
-        applies_to_type: 'properties'
-      });
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const result = data[0];
-        if (result.is_valid) {
-          setPromoDiscount(parseFloat(result.discount_value) || 0);
-          setPromoApplied(true);
-          setPromoMessage(result.message);
-        } else {
-          setPromoDiscount(0);
-          setPromoApplied(false);
-          setPromoMessage(result.message);
-        }
-      }
-    } catch (err) {
-      console.error('Promo code error:', err);
-      setPromoMessage('Failed to validate promo code');
-    }
-  };
-
-  const handleRemovePromoCode = () => {
-    setPromoCode('');
-    setPromoDiscount(0);
-    setPromoApplied(false);
-    setPromoMessage('');
-  };
+  const grandTotal = totalPrice + securityDeposit;
 
   const handleAddToCart = async () => {
     if (!checkInDate || !checkOutDate) {
@@ -161,7 +104,7 @@ export default function AddPropertyToCartModal({
       return;
     }
 
-    if (!phoneNumber) {
+    if (!phoneNumber.trim()) {
       setError('Please provide a phone number');
       return;
     }
@@ -178,19 +121,13 @@ export default function AddPropertyToCartModal({
         return;
       }
 
-      if (promoApplied && promoCode) {
-        await supabase.rpc('increment_promo_code_usage', {
-          code_text: promoCode.trim()
-        });
-      }
-
       await addPropertyItem({
         property,
         checkInDate,
         checkOutDate,
         guests,
         specialRequests,
-        price: priceAfterDiscount,
+        price: totalPrice,
         phoneNumber,
       });
 
@@ -200,7 +137,10 @@ export default function AddPropertyToCartModal({
       console.error('Error adding to cart:', err);
       setError(err instanceof Error ? err.message : 'Failed to add to cart');
       setLoading(false);
+      return;
     }
+
+    setLoading(false);
   };
 
   return (
@@ -212,6 +152,7 @@ export default function AddPropertyToCartModal({
             <p className="text-sm text-gray-600">{property.location}</p>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="flex-shrink-0 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             aria-label="Close modal"
@@ -258,7 +199,7 @@ export default function AddPropertyToCartModal({
                       <div>
                         <p className="text-sm text-gray-600">Check-in</p>
                         <p className="font-semibold">
-                          {new Date(checkInDate + 'T00:00:00').toLocaleDateString('en-US', {
+                          {new Date(`${checkInDate}T00:00:00`).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',
@@ -268,7 +209,7 @@ export default function AddPropertyToCartModal({
                       <div>
                         <p className="text-sm text-gray-600">Check-out</p>
                         <p className="font-semibold">
-                          {new Date(checkOutDate + 'T00:00:00').toLocaleDateString('en-US', {
+                          {new Date(`${checkOutDate}T00:00:00`).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',
@@ -283,42 +224,45 @@ export default function AddPropertyToCartModal({
                           <span className="text-gray-700">Number of nights:</span>
                           <span className="font-semibold text-gray-900">{totalNights}</span>
                         </div>
+
                         <div className="flex justify-between items-center">
                           <span className="text-gray-700">Nightly total:</span>
-                          <span className="font-semibold text-gray-900">${subtotal.toFixed(2)}</span>
+                          <span className="font-semibold text-gray-900">
+                            ${subtotal.toFixed(2)}
+                          </span>
                         </div>
+
                         {cleaningFee > 0 && (
                           <div className="flex justify-between items-center">
                             <span className="text-gray-700">Cleaning fee:</span>
-                            <span className="font-semibold text-gray-900">${cleaningFee.toFixed(2)}</span>
+                            <span className="font-semibold text-gray-900">
+                              ${cleaningFee.toFixed(2)}
+                            </span>
                           </div>
                         )}
+
                         <div className="flex justify-between items-center pb-2 border-b border-blue-200">
                           <span className="text-gray-700">Rental subtotal:</span>
-                          <span className="font-semibold text-gray-900">${totalPrice.toFixed(2)}</span>
+                          <span className="font-semibold text-gray-900">
+                            ${totalPrice.toFixed(2)}
+                          </span>
                         </div>
-                        {promoApplied && (
-                          <div className="flex justify-between items-center pb-2 border-b border-blue-200">
-                            <span className="text-green-700 font-medium">Discount ({promoDiscount}%):</span>
-                            <span className="font-semibold text-green-700">-${discountAmount.toFixed(2)}</span>
-                          </div>
-                        )}
-                        {promoApplied && (
-                          <div className="flex justify-between items-center pb-2 border-b border-blue-200">
-                            <span className="text-gray-700 font-medium">Price after discount:</span>
-                            <span className="font-semibold text-gray-900">${priceAfterDiscount.toFixed(2)}</span>
-                          </div>
-                        )}
+
                         <div className="flex justify-between items-center pb-2 border-b border-blue-200">
                           <span className="text-yellow-700 font-medium">Security deposit:</span>
                           <span className="font-semibold text-yellow-700">$500.00</span>
                         </div>
+
                         <div className="flex justify-between items-center pt-2">
-                          <span className="text-lg font-semibold text-gray-900">Total:</span>
+                          <span className="text-lg font-semibold text-gray-900">Estimated Total:</span>
                           <span className="text-2xl font-bold text-blue-600">
                             ${grandTotal.toFixed(2)}
                           </span>
                         </div>
+
+                        <p className="text-xs text-gray-600 pt-2">
+                          Promo codes are applied at checkout.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -335,7 +279,7 @@ export default function AddPropertyToCartModal({
                       min="1"
                       max={property.max_guests}
                       value={guests}
-                      onChange={(e) => setGuests(parseInt(e.target.value))}
+                      onChange={(e) => setGuests(parseInt(e.target.value, 10) || 1)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                     <p className="text-sm text-gray-500 mt-1">
@@ -362,45 +306,6 @@ export default function AddPropertyToCartModal({
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <Tag className="w-4 h-4 inline mr-2" />
-                      Promo Code (Optional)
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={promoCode}
-                        onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                        disabled={promoApplied}
-                        placeholder="ENTER PROMO CODE"
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed uppercase"
-                      />
-                      {!promoApplied ? (
-                        <button
-                          type="button"
-                          onClick={handleApplyPromoCode}
-                          className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors whitespace-nowrap"
-                        >
-                          Apply
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleRemovePromoCode}
-                          className="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors whitespace-nowrap"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    {promoMessage && (
-                      <p className={`text-sm mt-2 ${promoApplied ? 'text-green-600' : 'text-red-600'}`}>
-                        {promoMessage}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Special Requests (Optional)
                     </label>
                     <textarea
@@ -421,7 +326,7 @@ export default function AddPropertyToCartModal({
                     {priceBreakdown.map((night, index) => (
                       <div key={index} className="flex justify-between text-sm">
                         <span className="text-gray-600">
-                          {new Date(night.date + 'T00:00:00').toLocaleDateString('en-US', {
+                          {new Date(`${night.date}T00:00:00`).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                           })}
@@ -448,7 +353,9 @@ export default function AddPropertyToCartModal({
               $500 Refundable Security Deposit Required
             </h4>
             <p className="text-yellow-800 text-sm mb-3">
-              A $500 security deposit is required for all vacation rental bookings. This deposit will be fully refunded within 7 days after checkout, provided there is no damage to the property.
+              A $500 security deposit is required for all vacation rental bookings. This deposit
+              will be fully refunded within 7 days after checkout, provided there is no damage to
+              the property.
             </p>
             <label className="flex items-start gap-3 cursor-pointer">
               <input
@@ -464,8 +371,15 @@ export default function AddPropertyToCartModal({
           </div>
 
           <button
+            type="button"
             onClick={handleAddToCart}
-            disabled={loading || !checkInDate || !checkOutDate || totalNights <= 0 || !depositAcknowledged}
+            disabled={
+              loading ||
+              !checkInDate ||
+              !checkOutDate ||
+              totalNights <= 0 ||
+              !depositAcknowledged
+            }
             className="w-full bg-blue-600 text-white py-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <ShoppingCart className="w-5 h-5" />

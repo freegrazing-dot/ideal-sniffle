@@ -1,5 +1,7 @@
-import { Clock, Users, ShoppingCart, Sunset } from 'lucide-react';
-import { Activity } from '../types';
+import { useState } from 'react';
+import ActivityGalleryModal from './ActivityGalleryModal';
+import { Clock, Users, Images } from 'lucide-react';
+import type { Activity } from '../types';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -7,60 +9,85 @@ interface ActivityCardProps {
 }
 
 export function ActivityCard({ activity, onAddToCart }: ActivityCardProps) {
-  const isSunsetActivity = activity.name.toLowerCase().includes('sunset');
+  const [showGallery, setShowGallery] = useState(false);
+
+  const images =
+    activity.gallery_images?.length
+      ? [activity.image_url, ...activity.gallery_images].filter(Boolean)
+      : [activity.image_url].filter(Boolean);
+
+  const galleryCount = images.length;
 
   return (
-    <div className="group bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2">
-      <div className="relative h-64 overflow-hidden">
-        <img
-          src={activity.image_url}
-          alt={activity.name}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-        <div className="absolute bottom-4 left-4 right-4">
-          <h3 className="text-2xl font-bold text-white mb-1">{activity.name}</h3>
-        </div>
-      </div>
+    <>
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow">
+        <div className="relative h-64 group">
+          <div
+            onClick={() => setShowGallery(true)}
+            style={{ cursor: 'pointer' }}
+            className="w-full h-full"
+          >
+            <img
+              src={activity.image_url}
+              alt={activity.name}
+              className="w-full h-full object-cover"
+            />
+          </div>
 
-      <div className="p-6">
-        <p className="text-gray-600 mb-6 leading-relaxed line-clamp-3">
-          {activity.description}
-        </p>
-
-        <div className="flex items-center justify-between mb-6 text-sm text-gray-500">
-          {activity.duration_hours && activity.duration_hours !== 0 && (
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-cyan-600" />
-              <span>{activity.duration_hours}h</span>
-            </div>
+          {galleryCount > 1 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowGallery(true);
+              }}
+              className="absolute bottom-4 right-4 bg-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 transition-all hover:bg-gray-50 hover:scale-105"
+            >
+              <Images className="w-4 h-4" />
+              <span className="text-sm font-semibold">View {galleryCount} Photos</span>
+            </button>
           )}
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-cyan-600" />
-            <span>Up to {activity.capacity}</span>
-          </div>
         </div>
 
-        {isSunsetActivity && (
-          <div className="mb-6 bg-gradient-to-r from-orange-50 to-pink-50 border border-orange-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-sm text-orange-800">
-              <Sunset className="w-4 h-4 text-orange-600" />
-              <span className="font-medium">Departs 1 hour before sunset</span>
-            </div>
-            <p className="text-xs text-orange-700 mt-1 ml-6">
-              2-hour window: 1hr before to 1hr after sunset
-            </p>
-          </div>
-        )}
+        <div className="p-6">
+          <h3 className="text-2xl font-bold text-gray-900 mb-2">{activity.name}</h3>
 
-        <button
-          onClick={() => onAddToCart(activity)}
-          className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white py-3 rounded-lg font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2"
-        >
-          <ShoppingCart className="w-5 h-5" />
-          <span>Add to Cart</span>
-        </button>
+          <p className="text-gray-600 mb-4 line-clamp-3">{activity.description}</p>
+
+          <div className="grid grid-cols-2 gap-4 mb-4 pb-4 border-b border-gray-200">
+            <div className="flex items-center">
+              <Clock className="w-5 h-5 text-cyan-600 mr-2" />
+              <div>
+                <p className="text-xs text-gray-500">Duration</p>
+                <p className="text-sm font-semibold">{activity.duration_hours} hrs</p>
+              </div>
+            </div>
+
+            <div className="flex items-center">
+              <Users className="w-5 h-5 text-cyan-600 mr-2" />
+              <div>
+                <p className="text-xs text-gray-500">Capacity</p>
+                <p className="text-sm font-semibold">{activity.capacity}</p>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onAddToCart(activity)}
+            className="w-full bg-cyan-600 text-white py-3 rounded-lg font-semibold hover:bg-cyan-700 transition-colors"
+          >
+            Book Now
+          </button>
+        </div>
       </div>
-    </div>
+
+      {showGallery && (
+        <ActivityGalleryModal
+          images={images}
+          onClose={() => setShowGallery(false)}
+        />
+      )}
+    </>
   );
 }

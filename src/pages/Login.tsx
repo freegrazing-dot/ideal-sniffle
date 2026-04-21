@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { LoginForm } from '../components/auth/LoginForm'
 import { SignupForm } from '../components/auth/SignupForm'
 
-export function Login() {
+export default function Login() {
   const [isLogin, setIsLogin] = useState(true)
 
   return (
