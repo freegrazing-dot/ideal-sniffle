@@ -9,7 +9,7 @@ import AddPropertyToCartModal from './components/AddPropertyToCartModal';
 import { PropertyGallery } from './components/PropertyGallery';
 import SecurityDepositCard from './components/SecurityDepositCard';
 import MerchandiseShopCard from './components/MerchandiseShopCard';
-import MerchandiseModal from './components/MerchandiseModal';
+
 import { Footer } from './components/Footer';
 import { Hero } from './components/Hero';
 import { Navigation } from './components/Navigation';
@@ -408,12 +408,7 @@ if (activitiesResult.error) {
         />
       )}
 
-      <MerchandiseModal
-        isOpen={isMerchandiseModalOpen}
-        onClose={() => setIsMerchandiseModalOpen(false)}
-        items={merchandiseItems}
-        onAddToCart={handleAddMerchandise}
-      />
+     
     </div>
   );
 }
