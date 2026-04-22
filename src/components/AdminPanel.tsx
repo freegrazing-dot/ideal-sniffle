@@ -7,7 +7,6 @@ import { PromoCodesAdmin } from './PromoCodesAdmin';
 import { PromoBannerAdmin } from './PromoBannerAdmin';
 import SiteSettings from './SiteSettings';
 import { TaxReport } from './TaxReport';
-import AdminMerchView from './AdminMerchView';
 
 type Tab =
   | 'properties'
@@ -75,8 +74,7 @@ export default function AdminPanel() {
         {activeTab === 'banners' && <PromoBannerAdmin />}
         {activeTab === 'settings' && <SiteSettings />}
         {activeTab === 'tax' && <TaxReport />}
-        {activeTab === 'merch' && <AdminMerchView />}
-        {activeTab === 'activities' && <ActivitiesAdmin />}
+               {activeTab === 'activities' && <ActivitiesAdmin />}
       </div>
     </div>
   );
