@@ -485,7 +485,7 @@ export default function CheckoutModal({
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-700">Lodging Tax (11.5%)</span>
                       <span className="font-medium text-gray-900">
-                        ((promoDiscount > 0 ? adjustedLodgingTax : lodgingTax) ?? 0).toFixed(2)}
+                          {((promoDiscount > 0 ? adjustedLodgingTax : lodgingTax) ?? 0).toFixed(2)}
                       </span>
                     </div>
                   )}
