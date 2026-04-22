@@ -99,7 +99,14 @@ function HomePage() {
       if (activitiesResult.error) {
         console.error('Activities error:', activitiesResult.error);
       } else {
-        setActivities(activitiesResult.data || []);
+        setActivities(
+  (activitiesResult.data || []).map((activity: any) => ({
+    ...activity,
+    gallery_images: Array.isArray(activity.gallery_images)
+      ? activity.gallery_images.filter(Boolean)
+      : [],
+  }))
+);
       }
 
       if (securityDepositsResult.error) {
