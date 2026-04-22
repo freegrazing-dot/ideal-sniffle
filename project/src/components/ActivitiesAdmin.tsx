@@ -14,12 +14,35 @@ type Activity = {
   created_at?: string;
 };
 
+type NewActivityForm = {
+  name: string;
+  description: string;
+  duration_hours: string;
+  capacity: string;
+  price: string;
+  image_url: string;
+};
+
+const emptyNewActivity: NewActivityForm = {
+  name: '',
+  description: '',
+  duration_hours: '',
+  capacity: '',
+  price: '',
+  image_url: '',
+};
+
 export default function ActivitiesAdmin() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [uploadingMainId, setUploadingMainId] = useState<string | null>(null);
   const [uploadingGalleryId, setUploadingGalleryId] = useState<string | null>(null);
+
+  const [newActivity, setNewActivity] = useState<NewActivityForm>(emptyNewActivity);
+  const [creating, setCreating] = useState(false);
+  const [creatingMainImage, setCreatingMainImage] = useState(false);
+  const [newGalleryFiles, setNewGalleryFiles] = useState<string[]>([]);
 
   useEffect(() => {
     void loadActivities();
@@ -28,10 +51,7 @@ export default function ActivitiesAdmin() {
   async function loadActivities() {
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .order('created_at');
+    const { data, error } = await supabase.from('activities').select('*').order('created_at');
 
     if (error) {
       console.error('Error loading activities:', error);
@@ -73,10 +93,7 @@ export default function ActivitiesAdmin() {
       active: !!activity.active,
     };
 
-    const { error } = await supabase
-      .from('activities')
-      .update(payload)
-      .eq('id', activity.id);
+    const { error } = await supabase.from('activities').update(payload).eq('id', activity.id);
 
     if (error) {
       console.error('Error saving activity:', error);
@@ -131,9 +148,7 @@ export default function ActivitiesAdmin() {
           .toString(36)
           .slice(2)}.${fileExt}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from('site-images')
-          .upload(fileName, file);
+        const { error: uploadError } = await supabase.storage.from('site-images').upload(fileName, file);
 
         if (uploadError) throw uploadError;
 
@@ -160,6 +175,99 @@ export default function ActivitiesAdmin() {
     updateLocalActivity(activityId, 'gallery_images', next);
   }
 
+  async function uploadNewMainImage(file: File | null) {
+    if (!file) return;
+
+    setCreatingMainImage(true);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `activities/main/new-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('site-images')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('site-images').getPublicUrl(fileName);
+
+      setNewActivity((prev) => ({ ...prev, image_url: data.publicUrl }));
+    } catch (error) {
+      console.error('Error uploading new main image:', error);
+      alert('Failed to upload new main image');
+    } finally {
+      setCreatingMainImage(false);
+    }
+  }
+
+  async function uploadNewGalleryImages(files: FileList | null) {
+    if (!files || files.length === 0) return;
+
+    try {
+      const newUrls: string[] = [];
+
+      for (const file of Array.from(files)) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `activities/gallery/new-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage.from('site-images').upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data } = supabase.storage.from('site-images').getPublicUrl(fileName);
+        newUrls.push(data.publicUrl);
+      }
+
+      setNewGalleryFiles((prev) => [...prev, ...newUrls]);
+    } catch (error) {
+      console.error('Error uploading new gallery images:', error);
+      alert('Failed to upload new gallery images');
+    }
+  }
+
+  function removeNewGalleryImage(index: number) {
+    setNewGalleryFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function createActivity() {
+    if (!newActivity.name.trim()) {
+      alert('Activity name is required');
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      const payload = {
+        name: newActivity.name.trim(),
+        description: newActivity.description.trim(),
+        duration_hours: Number(newActivity.duration_hours || 0),
+        capacity: Number(newActivity.capacity || 0),
+        price: Number(newActivity.price || 0),
+        image_url: newActivity.image_url || '',
+        gallery_images: newGalleryFiles,
+        active: true,
+      };
+
+      const { error } = await supabase.from('activities').insert([payload]);
+
+      if (error) {
+        console.error('Error creating activity:', error);
+        alert('Error creating activity');
+      } else {
+        alert('Activity created');
+        setNewActivity(emptyNewActivity);
+        setNewGalleryFiles([]);
+        await loadActivities();
+      }
+    } finally {
+      setCreating(false);
+    }
+  }
+
   if (loading) {
     return <div className="p-6">Loading activities...</div>;
   }
@@ -168,14 +276,127 @@ export default function ActivitiesAdmin() {
     <div className="p-6 space-y-6">
       <h2 className="text-2xl font-bold">Activities Admin</h2>
 
-      {activities.map((activity) => (
-        <div
-          key={activity.id}
-          className="border rounded-lg p-4 bg-white shadow space-y-4"
-        >
-          <div className="font-semibold text-lg">
-            {activity.name || 'Untitled Activity'}
+      <div className="border rounded-lg p-4 bg-white shadow space-y-4">
+        <div className="font-semibold text-lg">Create New Activity</div>
+
+        <div>
+          <label className="block text-xs mb-1">Activity Name</label>
+          <input
+            type="text"
+            value={newActivity.name}
+            onChange={(e) => setNewActivity((prev) => ({ ...prev, name: e.target.value }))}
+            className="border p-2 w-full rounded"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs mb-1">Description</label>
+          <textarea
+            value={newActivity.description}
+            onChange={(e) => setNewActivity((prev) => ({ ...prev, description: e.target.value }))}
+            className="border p-2 w-full rounded min-h-[120px]"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-xs mb-1">Duration (hours)</label>
+            <input
+              type="number"
+              value={newActivity.duration_hours}
+              onChange={(e) =>
+                setNewActivity((prev) => ({ ...prev, duration_hours: e.target.value }))
+              }
+              className="border p-2 w-full rounded"
+            />
           </div>
+
+          <div>
+            <label className="block text-xs mb-1">Capacity</label>
+            <input
+              type="number"
+              value={newActivity.capacity}
+              onChange={(e) => setNewActivity((prev) => ({ ...prev, capacity: e.target.value }))}
+              className="border p-2 w-full rounded"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs mb-1">Price</label>
+            <input
+              type="number"
+              value={newActivity.price}
+              onChange={(e) => setNewActivity((prev) => ({ ...prev, price: e.target.value }))}
+              className="border p-2 w-full rounded"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs mb-2">Main Image</label>
+          <input
+            type="text"
+            value={newActivity.image_url}
+            onChange={(e) => setNewActivity((prev) => ({ ...prev, image_url: e.target.value }))}
+            className="border p-2 w-full rounded mb-2"
+            placeholder="Main image URL"
+          />
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => void uploadNewMainImage(e.target.files?.[0] || null)}
+            className="border p-2 w-full rounded"
+          />
+          {creatingMainImage && (
+            <p className="text-sm text-gray-500 mt-1">Uploading main image...</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs mb-2">Gallery Images</label>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(e) => void uploadNewGalleryImages(e.target.files)}
+            className="border p-2 w-full rounded"
+          />
+
+          {newGalleryFiles.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+              {newGalleryFiles.map((url, index) => (
+                <div key={index} className="border rounded p-2 space-y-2">
+                  <img
+                    src={url}
+                    alt={`New gallery ${index + 1}`}
+                    className="w-full h-24 object-cover rounded"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeNewGalleryImage(index)}
+                    className="px-2 py-1 text-xs bg-red-600 text-white rounded"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void createActivity()}
+          disabled={creating}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+        >
+          {creating ? 'Creating...' : 'Create Activity'}
+        </button>
+      </div>
+
+      {activities.map((activity) => (
+        <div key={activity.id} className="border rounded-lg p-4 bg-white shadow space-y-4">
+          <div className="font-semibold text-lg">{activity.name || 'Untitled Activity'}</div>
 
           {activity.image_url ? (
             <img
@@ -190,9 +411,7 @@ export default function ActivitiesAdmin() {
             <input
               type="text"
               value={activity.name ?? ''}
-              onChange={(e) =>
-                updateLocalActivity(activity.id, 'name', e.target.value)
-              }
+              onChange={(e) => updateLocalActivity(activity.id, 'name', e.target.value)}
               className="border p-2 w-full rounded"
             />
           </div>
@@ -201,9 +420,7 @@ export default function ActivitiesAdmin() {
             <label className="block text-xs mb-1">Description</label>
             <textarea
               value={activity.description ?? ''}
-              onChange={(e) =>
-                updateLocalActivity(activity.id, 'description', e.target.value)
-              }
+              onChange={(e) => updateLocalActivity(activity.id, 'description', e.target.value)}
               className="border p-2 w-full rounded min-h-[120px]"
             />
           </div>
@@ -215,11 +432,7 @@ export default function ActivitiesAdmin() {
                 type="number"
                 value={activity.duration_hours ?? ''}
                 onChange={(e) =>
-                  updateLocalActivity(
-                    activity.id,
-                    'duration_hours',
-                    Number(e.target.value)
-                  )
+                  updateLocalActivity(activity.id, 'duration_hours', Number(e.target.value))
                 }
                 className="border p-2 w-full rounded"
               />
@@ -231,11 +444,7 @@ export default function ActivitiesAdmin() {
                 type="number"
                 value={activity.capacity ?? ''}
                 onChange={(e) =>
-                  updateLocalActivity(
-                    activity.id,
-                    'capacity',
-                    Number(e.target.value)
-                  )
+                  updateLocalActivity(activity.id, 'capacity', Number(e.target.value))
                 }
                 className="border p-2 w-full rounded"
               />
@@ -247,11 +456,7 @@ export default function ActivitiesAdmin() {
                 type="number"
                 value={activity.price ?? ''}
                 onChange={(e) =>
-                  updateLocalActivity(
-                    activity.id,
-                    'price',
-                    Number(e.target.value)
-                  )
+                  updateLocalActivity(activity.id, 'price', Number(e.target.value))
                 }
                 className="border p-2 w-full rounded"
               />
@@ -263,18 +468,14 @@ export default function ActivitiesAdmin() {
             <input
               type="text"
               value={activity.image_url ?? ''}
-              onChange={(e) =>
-                updateLocalActivity(activity.id, 'image_url', e.target.value)
-              }
+              onChange={(e) => updateLocalActivity(activity.id, 'image_url', e.target.value)}
               className="border p-2 w-full rounded mb-2"
               placeholder="Main image URL"
             />
             <input
               type="file"
               accept="image/*"
-              onChange={(e) =>
-                void uploadMainImage(activity.id, e.target.files?.[0] || null)
-              }
+              onChange={(e) => void uploadMainImage(activity.id, e.target.files?.[0] || null)}
               className="border p-2 w-full rounded"
             />
             {uploadingMainId === activity.id && (
@@ -303,9 +504,7 @@ export default function ActivitiesAdmin() {
               type="file"
               accept="image/*"
               multiple
-              onChange={(e) =>
-                void uploadGalleryImages(activity.id, e.target.files)
-              }
+              onChange={(e) => void uploadGalleryImages(activity.id, e.target.files)}
               className="border p-2 w-full rounded"
             />
             {uploadingGalleryId === activity.id && (
@@ -339,9 +538,7 @@ export default function ActivitiesAdmin() {
             <input
               type="checkbox"
               checked={!!activity.active}
-              onChange={(e) =>
-                updateLocalActivity(activity.id, 'active', e.target.checked)
-              }
+              onChange={(e) => updateLocalActivity(activity.id, 'active', e.target.checked)}
             />
           </div>
 
