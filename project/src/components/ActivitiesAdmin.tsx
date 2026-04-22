@@ -79,22 +79,35 @@ export default function ActivitiesAdmin() {
     );
   }
 
-  async function saveActivity(activity: Activity) {
-    setSavingId(activity.id);
+ async function saveActivity(activity: Activity) {
+  setSavingId(activity.id);
 
-   const cleanName = newActivity.name.trim();
+  const cleanName = activity.name || '';
 
-const payload = {
-  name: cleanName,
-  title: cleanName,
-  description: newActivity.description.trim(),
-  duration_hours: Number(newActivity.duration_hours || 0),
-  capacity: Number(newActivity.capacity || 0),
-  price: Number(newActivity.price || 0),
-  image_url: newActivity.image_url || '',
-  gallery_images: newGalleryFiles,
-  active: true,
-};
+  const payload = {
+    name: cleanName,
+    title: cleanName,
+    description: activity.description || '',
+    duration_hours: Number(activity.duration_hours || 0),
+    capacity: Number(activity.capacity || 0),
+    price: Number(activity.price || 0),
+    image_url: activity.image_url || '',
+    gallery_images: activity.gallery_images || [],
+    active: !!activity.active,
+  };
+
+  const { error } = await supabase.from('activities').update(payload).eq('id', activity.id);
+
+  if (error) {
+    console.error('Error saving activity:', error);
+    alert('Error saving activity');
+  } else {
+    alert('Saved');
+    await loadActivities();
+  }
+
+  setSavingId(null);
+}
 
     const { error } = await supabase.from('activities').update(payload).eq('id', activity.id);
 
@@ -235,44 +248,44 @@ const payload = {
     setNewGalleryFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
-  async function createActivity() {
-    if (!newActivity.name.trim()) {
-      alert('Activity name is required');
-      return;
-    }
-
-    setCreating(true);
-
-    try {
-     const cleanName = activity.name || '';
-
-const payload = {
-  name: cleanName,
-  title: cleanName,
-  description: activity.description || '',
-  duration_hours: Number(activity.duration_hours || 0),
-  capacity: Number(activity.capacity || 0),
-  price: Number(activity.price || 0),
-  image_url: activity.image_url || '',
-  gallery_images: activity.gallery_images || [],
-  active: !!activity.active,
-};
-
-      const { error } = await supabase.from('activities').insert([payload]);
-
-      if (error) {
-        console.error('Error creating activity:', error);
-        alert('Error creating activity');
-      } else {
-        alert('Activity created');
-        setNewActivity(emptyNewActivity);
-        setNewGalleryFiles([]);
-        await loadActivities();
-      }
-    } finally {
-      setCreating(false);
-    }
+ async function createActivity() {
+  if (!newActivity.name.trim()) {
+    alert('Activity name is required');
+    return;
   }
+
+  setCreating(true);
+
+  try {
+    const cleanName = newActivity.name.trim();
+
+    const payload = {
+      name: cleanName,
+      title: cleanName,
+      description: newActivity.description.trim(),
+      duration_hours: Number(newActivity.duration_hours || 0),
+      capacity: Number(newActivity.capacity || 0),
+      price: Number(newActivity.price || 0),
+      image_url: newActivity.image_url || '',
+      gallery_images: newGalleryFiles,
+      active: true,
+    };
+
+    const { error } = await supabase.from('activities').insert([payload]);
+
+    if (error) {
+      console.error('Error creating activity:', error);
+      alert('Error creating activity');
+    } else {
+      alert('Activity created');
+      setNewActivity(emptyNewActivity);
+      setNewGalleryFiles([]);
+      await loadActivities();
+    }
+  } finally {
+    setCreating(false);
+  }
+}
 
   if (loading) {
     return <div className="p-6">Loading activities...</div>;
