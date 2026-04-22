@@ -1,43 +1,47 @@
 import { useState } from 'react';
+
+import PropertiesAdmin from './PropertiesAdmin';
+import ActivitiesAdmin from './ActivitiesAdmin';
+
 import { RentalBookingsAdmin } from './RentalBookingsAdmin';
 import { AdminCalendarView } from './AdminCalendarView';
 import { PromoCodesAdmin } from './PromoCodesAdmin';
 import { PromoBannerAdmin } from './PromoBannerAdmin';
 import SiteSettings from './SiteSettings';
 import { TaxReport } from './TaxReport';
-import AdminMerchView from './AdminMerchView';
 
 type Tab =
-  | 'list'
-  | 'calendar'
   | 'properties'
-  | 'rentals'
-  | 'taxes'
-  | 'settings'
+  | 'activities'
+  | 'bookings'
+  | 'calendar'
+  | 'promo'
   | 'banners'
-  | 'promo-codes'
+  | 'settings'
+  | 'tax'
   | 'merch';
 
 export default function AdminPanel() {
-  const [activeTab, setActiveTab] = useState<Tab>('merch'); // change back to 'settings' later if you want
+  const [activeTab, setActiveTab] = useState<Tab>('properties');
 
   const TabButton = ({
     id,
-    label
+    label,
   }: {
     id: Tab;
     label: string;
   }) => (
     <button
-      type="button"
       onClick={() => setActiveTab(id)}
+      type="button"
       style={{
         padding: '10px 14px',
         borderRadius: 8,
         border: 'none',
+        cursor: 'pointer',
         background: activeTab === id ? '#111827' : '#e5e7eb',
-        color: activeTab === id ? '#fff' : '#111',
-        cursor: 'pointer'
+        color: activeTab === id ? '#fff' : '#111827',
+        fontWeight: 600,
       }}
     >
       {label}
@@ -46,38 +50,54 @@ export default function AdminPanel() {
 
   return (
     <div className="p-6">
-      <h1>Admin Panel</h1>
 
+      {/* tabs */}
       <div
         style={{
           display: 'flex',
           gap: 10,
           flexWrap: 'wrap',
-          marginTop: 20
+          marginBottom: 20,
         }}
       >
-        <TabButton id="list" label="List" />
-        <TabButton id="calendar" label="Calendar" />
         <TabButton id="properties" label="Properties" />
-        <TabButton id="rentals" label="Rentals" />
-        <TabButton id="taxes" label="Tax Reports" />
-        <TabButton id="settings" label="Settings" />
+        <TabButton id="activities" label="Activities" />
+        <TabButton id="bookings" label="Bookings" />
+        <TabButton id="calendar" label="Calendar" />
+        <TabButton id="promo" label="Promo Codes" />
         <TabButton id="banners" label="Banners" />
-        <TabButton id="promo-codes" label="Promo Codes" />
+        <TabButton id="settings" label="Settings" />
+        <TabButton id="tax" label="Tax Report" />
         <TabButton id="merch" label="Merch" />
       </div>
 
-      <div style={{ marginTop: 30 }}>
-        {activeTab === 'list' && <div>List tab placeholder</div>}
+      {/* tab content */}
+      <div>
+
+        {activeTab === 'properties' && <PropertiesAdmin />}
+
+        {activeTab === 'activities' && <ActivitiesAdmin />}
+
+        {activeTab === 'bookings' && <RentalBookingsAdmin />}
+
         {activeTab === 'calendar' && <AdminCalendarView />}
-        {activeTab === 'properties' && <div>Properties tab placeholder</div>}
-        {activeTab === 'rentals' && <RentalBookingsAdmin />}
-        {activeTab === 'taxes' && <TaxReport />}
-        {activeTab === 'settings' && <SiteSettings />}
+
+        {activeTab === 'promo' && <PromoCodesAdmin />}
+
         {activeTab === 'banners' && <PromoBannerAdmin />}
-        {activeTab === 'promo-codes' && <PromoCodesAdmin />}
-        {activeTab === 'merch' && <AdminMerchView />}
+
+        {activeTab === 'settings' && <SiteSettings />}
+
+        {activeTab === 'tax' && <TaxReport />}
+
+        {activeTab === 'merch' && (
+          <div style={{ padding: 20 }}>
+            Merch admin loading...
+          </div>
+        )}
+
       </div>
+
     </div>
   );
 }
