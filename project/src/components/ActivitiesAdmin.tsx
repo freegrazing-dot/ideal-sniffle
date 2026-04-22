@@ -7,7 +7,7 @@ type Activity = {
   description: string;
   duration_hours: number;
   capacity: number;
-  base_price: number;
+  price: number;
   image_url: string;
   gallery_images?: string[];
   active: boolean;
@@ -67,7 +67,7 @@ export default function ActivitiesAdmin() {
       description: activity.description || '',
       duration_hours: Number(activity.duration_hours || 0),
       capacity: Number(activity.capacity || 0),
-      base_price: Number(activity.base_price || 0),
+      price: Number(activity.price || 0),
       image_url: activity.image_url || '',
       gallery_images: activity.gallery_images || [],
       active: !!activity.active,
@@ -245,14 +245,14 @@ export default function ActivitiesAdmin() {
               <label className="block text-xs mb-1">Base Price</label>
               <input
                 type="number"
-                value={activity.base_price ?? ''}
-                onChange={(e) =>
-                  updateLocalActivity(
-                    activity.id,
-                    'base_price',
-                    Number(e.target.value)
-                  )
-                }
+                value={activity.price ?? ''}
+onChange={(e) =>
+  updateLocalActivity(
+    activity.id,
+    'price',
+    Number(e.target.value)
+  )
+}
                 className="border p-2 w-full rounded"
               />
             </div>
