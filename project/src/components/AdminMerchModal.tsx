@@ -97,7 +97,7 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                       <h3 className="font-bold text-lg text-gray-900 mb-1">{item.name}</h3>
                       <p className="text-sm text-gray-600 mb-2 line-clamp-2">{item.description}</p>
                       <div className="flex items-center justify-between">
-                        <span className="text-2xl font-bold text-teal-600">${item.price.toFixed(2)}</span>
+                        <span className="text-2xl font-bold text-teal-600">${(item.price ?? 0).toFixed(2)}</span>
                         <span className="text-sm text-gray-500">{item.category}</span>
                       </div>
                       {item.stock_quantity > 0 ? (
@@ -177,7 +177,7 @@ export default function MerchandiseModal({ isOpen, onClose, items, onAddToCart }
                     <h3 className="text-3xl font-bold text-gray-900 mb-2">{selectedItem.name}</h3>
                     <p className="text-gray-600 mb-4">{selectedItem.description}</p>
                     <div className="text-4xl font-bold text-teal-600 mb-6">
-                      ${selectedItem.price.toFixed(2)}
+                     ${(selectedItem.price ?? 0).toFixed(2)}
                     </div>
 
                     <div className="space-y-4">

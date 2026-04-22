@@ -449,7 +449,7 @@ export default function CheckoutModal({
                         : `${item.name || 'Merchandise Item'} x ${item.quantity || 1}`}
                   </span>
                   <span className="font-medium text-gray-900">
-                    ${(item.price ?? 0).toFixed(2)}
+                    ${item.price.toFixed(2)}
                   </span>
                 </div>
               ))}
