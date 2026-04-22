@@ -18,6 +18,8 @@ export default function ActivitiesAdmin() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [uploadingMainId, setUploadingMainId] = useState<string | null>(null);
+  const [uploadingGalleryId, setUploadingGalleryId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadActivities();
@@ -85,6 +87,77 @@ export default function ActivitiesAdmin() {
     }
 
     setSavingId(null);
+  }
+
+  async function uploadMainImage(activityId: string, file: File | null) {
+    if (!file) return;
+
+    setUploadingMainId(activityId);
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `activities/main/${activityId}-${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('site-images')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('site-images').getPublicUrl(fileName);
+
+      updateLocalActivity(activityId, 'image_url', data.publicUrl);
+    } catch (error) {
+      console.error('Error uploading main image:', error);
+      alert('Failed to upload main image');
+    } finally {
+      setUploadingMainId(null);
+    }
+  }
+
+  async function uploadGalleryImages(activityId: string, files: FileList | null) {
+    if (!files || files.length === 0) return;
+
+    setUploadingGalleryId(activityId);
+
+    try {
+      const current = activities.find((a) => a.id === activityId);
+      const existingGallery = current?.gallery_images || [];
+      const newUrls: string[] = [];
+
+      for (const file of Array.from(files)) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `activities/gallery/${activityId}-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2)}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('site-images')
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data } = supabase.storage.from('site-images').getPublicUrl(fileName);
+        newUrls.push(data.publicUrl);
+      }
+
+      updateLocalActivity(activityId, 'gallery_images', [...existingGallery, ...newUrls]);
+    } catch (error) {
+      console.error('Error uploading gallery images:', error);
+      alert('Failed to upload gallery images');
+    } finally {
+      setUploadingGalleryId(null);
+    }
+  }
+
+  function removeGalleryImage(activityId: string, index: number) {
+    const activity = activities.find((a) => a.id === activityId);
+    if (!activity) return;
+
+    const next = [...(activity.gallery_images || [])];
+    next.splice(index, 1);
+
+    updateLocalActivity(activityId, 'gallery_images', next);
   }
 
   if (loading) {
@@ -186,21 +259,31 @@ export default function ActivitiesAdmin() {
           </div>
 
           <div>
-            <label className="block text-xs mb-1">Main Image URL</label>
+            <label className="block text-xs mb-2">Main Image</label>
             <input
               type="text"
               value={activity.image_url ?? ''}
               onChange={(e) =>
                 updateLocalActivity(activity.id, 'image_url', e.target.value)
               }
+              className="border p-2 w-full rounded mb-2"
+              placeholder="Main image URL"
+            />
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) =>
+                void uploadMainImage(activity.id, e.target.files?.[0] || null)
+              }
               className="border p-2 w-full rounded"
             />
+            {uploadingMainId === activity.id && (
+              <p className="text-sm text-gray-500 mt-1">Uploading main image...</p>
+            )}
           </div>
 
           <div>
-            <label className="block text-xs mb-1">
-              Gallery Image URLs (one per line)
-            </label>
+            <label className="block text-xs mb-2">Gallery Images</label>
             <textarea
               value={(activity.gallery_images || []).join('\n')}
               onChange={(e) =>
@@ -213,8 +296,42 @@ export default function ActivitiesAdmin() {
                     .filter(Boolean)
                 )
               }
-              className="border p-2 w-full rounded min-h-[120px]"
+              className="border p-2 w-full rounded min-h-[120px] mb-2"
+              placeholder="Gallery image URLs (one per line)"
             />
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) =>
+                void uploadGalleryImages(activity.id, e.target.files)
+              }
+              className="border p-2 w-full rounded"
+            />
+            {uploadingGalleryId === activity.id && (
+              <p className="text-sm text-gray-500 mt-1">Uploading gallery images...</p>
+            )}
+
+            {activity.gallery_images && activity.gallery_images.length > 0 && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+                {activity.gallery_images.map((url, index) => (
+                  <div key={index} className="border rounded p-2 space-y-2">
+                    <img
+                      src={url}
+                      alt={`Gallery ${index + 1}`}
+                      className="w-full h-24 object-cover rounded"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeGalleryImage(activity.id, index)}
+                      className="px-2 py-1 text-xs bg-red-600 text-white rounded"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
