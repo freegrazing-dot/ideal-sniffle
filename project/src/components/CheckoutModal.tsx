@@ -420,7 +420,7 @@ export default function CheckoutModal({
                   </div>
                   <div className="flex-1">
                     <h3 className="mb-1 text-sm font-semibold text-gray-900">
-                      ${depositAmount.toFixed(0)} Security Deposit Authorization (Hold)
+                      ${(depositAmount ?? 0).toFixed(0)} Security Deposit Authorization (Hold)
                     </h3>
                     <p className="text-xs leading-relaxed text-gray-600">
                       Your cart includes vacation rental(s). A ${depositAmount.toFixed(0)} hold
@@ -449,7 +449,7 @@ export default function CheckoutModal({
                         : `${item.name || 'Merchandise Item'} x ${item.quantity || 1}`}
                   </span>
                   <span className="font-medium text-gray-900">
-                    ${item.price.toFixed(2)}
+                    ${(item.price ?? 0).toFixed(2)}
                   </span>
                 </div>
               ))}
@@ -458,7 +458,7 @@ export default function CheckoutModal({
                 <>
                   <div className="flex justify-between border-t border-gray-200 pt-2 text-sm">
                     <span className="text-gray-700">Subtotal</span>
-                    <span className="font-medium text-gray-900">${subtotal.toFixed(2)}</span>
+                    <span className="font-medium text-gray-900">${(subtotal ?? 0).toFixed(2)}</span>
                   </div>
 
                   {promoApplied && promoDiscount > 0 && (
@@ -467,7 +467,7 @@ export default function CheckoutModal({
                         Discount ({promoDiscount}%) - {promoCode}
                       </span>
                       <span className="font-medium text-green-600">
-                        -${discountAmount.toFixed(2)}
+                        -${(discountAmount ?? 0).toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -476,7 +476,7 @@ export default function CheckoutModal({
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-700">Sales Tax (6.5%)</span>
                       <span className="font-medium text-gray-900">
-                        ${(promoDiscount > 0 ? adjustedSalesTax : salesTax).toFixed(2)}
+                        ${((promoDiscount > 0 ? adjustedSalesTax : salesTax) ?? 0).toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -485,7 +485,7 @@ export default function CheckoutModal({
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-700">Lodging Tax (11.5%)</span>
                       <span className="font-medium text-gray-900">
-                        ${(promoDiscount > 0 ? adjustedLodgingTax : lodgingTax).toFixed(2)}
+                        ((promoDiscount > 0 ? adjustedLodgingTax : lodgingTax) ?? 0).toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -496,7 +496,7 @@ export default function CheckoutModal({
                         Security Deposit (Hold - Not Charged)
                       </span>
                       <span className="font-medium text-yellow-700">
-                        ${depositAmount.toFixed(2)}
+                        ${(depositAmount ?? 0).toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -505,7 +505,7 @@ export default function CheckoutModal({
 
               <div className="flex justify-between border-t-2 border-gray-300 pt-3">
                 <span className="font-semibold text-gray-900">Total</span>
-                <span className="text-xl font-bold text-blue-600">${finalTotal.toFixed(2)}</span>
+                <span className="text-xl font-bold text-blue-600">${(finalTotal ?? 0).toFixed(2)}</span>
               </div>
             </div>
 
