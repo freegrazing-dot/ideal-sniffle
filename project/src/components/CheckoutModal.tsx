@@ -4,8 +4,11 @@ import {
   Info,
   AlertTriangle,
   Calendar,
-  Tag
-} from 'lucide-react';import type { CartItem } from '../lib/cart-context';
+  Tag,
+  X,
+} from 'lucide-react';
+
+import type { CartItem } from '../lib/cart-context';
 import { supabase } from '../lib/supabase';
 
 interface CheckoutModalProps {
@@ -78,6 +81,7 @@ export default function CheckoutModal({
 
   const calculateOperatorAge = (dob: string): number => {
     if (!dob) return 0;
+
     const birthDate = new Date(dob);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
@@ -163,11 +167,11 @@ export default function CheckoutModal({
 
   const propertySubtotal = items
     .filter((item) => item.type === 'property')
-    .reduce((sum, item) => sum + item.price, 0);
+    .reduce((sum, item) => sum + (item.price ?? 0), 0);
 
   const activityMerchandiseSubtotal = items
     .filter((item) => item.type === 'activity' || item.type === 'merchandise')
-    .reduce((sum, item) => sum + item.price, 0);
+    .reduce((sum, item) => sum + (item.price ?? 0), 0);
 
   const propertyDiscount =
     propertySubtotal > 0 && subtotal > 0 ? (discountAmount * propertySubtotal) / subtotal : 0;
@@ -220,14 +224,19 @@ export default function CheckoutModal({
       return () => clearTimeout(timer);
     }
 
-    if (!isOpen) {
-      supabase.rpc('cleanup_expired_bookings').then(({ error }) => {
-        if (error) {
-          console.error('Failed to cleanup expired bookings:', error);
-        }
-      });
-    }
+    supabase.rpc('cleanup_expired_bookings').then(({ error }) => {
+      if (error) {
+        console.error('Failed to cleanup expired bookings:', error);
+      }
+    });
   }, [isOpen]);
+
+  useEffect(() => {
+    setPromoApplied(false);
+    setPromoCode('');
+    setPromoDiscount(0);
+    setPromoMessage('');
+  }, [items]);
 
   const handleCheckout = async (e?: React.MouseEvent) => {
     if (e) {
@@ -293,7 +302,7 @@ export default function CheckoutModal({
     setError(null);
 
     try {
-      let boatingSafetyCardUrl = null;
+      let boatingSafetyCardUrl: string | null = null;
 
       if (hasJetSki && boatingSafetyCardFile) {
         setUploadingCard(true);
@@ -375,7 +384,7 @@ export default function CheckoutModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[9999] p-4"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && allowBackdropClick) {
           onClose();
@@ -383,37 +392,37 @@ export default function CheckoutModal({
       }}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto relative"
+        className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center rounded-t-2xl">
+        <div className="sticky top-0 flex items-center justify-between rounded-t-2xl border-b border-gray-200 bg-white px-6 py-4">
           <h2 className="text-2xl font-bold text-gray-900">Secure Checkout</h2>
           <button
             type="button"
             onClick={onClose}
             disabled={isLoading}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="rounded-full p-2 transition-colors hover:bg-gray-100"
             title="Close"
             aria-label="Close"
           >
-            <X className="w-6 h-6 text-gray-400" />
+            <X className="h-6 w-6 text-gray-400" />
           </button>
         </div>
 
         <div className="p-6">
           <div className="space-y-6">
             {items.some((item) => item.type === 'property') && depositAmount > 0 && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                 <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-semibold text-sm">
+                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
                     $
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 text-sm mb-1">
+                    <h3 className="mb-1 text-sm font-semibold text-gray-900">
                       ${depositAmount.toFixed(0)} Security Deposit Authorization (Hold)
                     </h3>
-                    <p className="text-gray-600 text-xs leading-relaxed">
+                    <p className="text-xs leading-relaxed text-gray-600">
                       Your cart includes vacation rental(s). A ${depositAmount.toFixed(0)} hold
                       will be placed on your card but NOT charged. The hold will be automatically
                       released after checkout if there are no damages.
@@ -423,8 +432,8 @@ export default function CheckoutModal({
               </div>
             )}
 
-            <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-              <h3 className="font-semibold text-gray-900 mb-3">Order Summary</h3>
+            <div className="space-y-3 rounded-lg bg-gray-50 p-4">
+              <h3 className="mb-3 font-semibold text-gray-900">Order Summary</h3>
 
               {items.map((item) => (
                 <div key={item.id} className="flex justify-between text-sm">
@@ -439,20 +448,22 @@ export default function CheckoutModal({
                           }`
                         : `${item.name || 'Merchandise Item'} x ${item.quantity || 1}`}
                   </span>
-                  <span className="font-medium text-gray-900">${item.price.toFixed(2)}</span>
+                  <span className="font-medium text-gray-900">
+                    ${(item.price ?? 0).toFixed(2)}
+                  </span>
                 </div>
               ))}
 
               {(depositAmount > 0 || lodgingTax > 0 || salesTax > 0 || promoApplied) && (
                 <>
-                  <div className="pt-2 border-t border-gray-200 flex justify-between text-sm">
+                  <div className="flex justify-between border-t border-gray-200 pt-2 text-sm">
                     <span className="text-gray-700">Subtotal</span>
                     <span className="font-medium text-gray-900">${subtotal.toFixed(2)}</span>
                   </div>
 
                   {promoApplied && promoDiscount > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-green-600 font-medium">
+                      <span className="font-medium text-green-600">
                         Discount ({promoDiscount}%) - {promoCode}
                       </span>
                       <span className="font-medium text-green-600">
@@ -481,7 +492,7 @@ export default function CheckoutModal({
 
                   {depositAmount > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-yellow-700 font-medium">
+                      <span className="font-medium text-yellow-700">
                         Security Deposit (Hold - Not Charged)
                       </span>
                       <span className="font-medium text-yellow-700">
@@ -492,7 +503,7 @@ export default function CheckoutModal({
                 </>
               )}
 
-              <div className="pt-3 border-t-2 border-gray-300 flex justify-between">
+              <div className="flex justify-between border-t-2 border-gray-300 pt-3">
                 <span className="font-semibold text-gray-900">Total</span>
                 <span className="text-xl font-bold text-blue-600">${finalTotal.toFixed(2)}</span>
               </div>
@@ -500,7 +511,7 @@ export default function CheckoutModal({
 
             <div className="space-y-4">
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="name" className="mb-2 block text-sm font-medium text-gray-700">
                   Full Name
                 </label>
                 <input
@@ -508,14 +519,14 @@ export default function CheckoutModal({
                   id="name"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-blue-500"
                   placeholder="John Doe"
                   required
                 />
               </div>
 
               <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="email" className="mb-2 block text-sm font-medium text-gray-700">
                   Email Address
                 </label>
                 <input
@@ -523,7 +534,7 @@ export default function CheckoutModal({
                   id="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-blue-500"
                   placeholder="john@example.com"
                   required
                 />
@@ -532,16 +543,16 @@ export default function CheckoutModal({
               <div>
                 <label
                   htmlFor="promo-code"
-                  className="block text-sm font-medium text-gray-700 mb-2"
+                  className="mb-2 block text-sm font-medium text-gray-700"
                 >
                   Promo Code (Optional)
                 </label>
 
                 {promoApplied ? (
-                  <div className="bg-green-50 border border-green-300 rounded-lg p-3">
+                  <div className="rounded-lg border border-green-300 bg-green-50 p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Tag className="w-4 h-4 text-green-600" />
+                        <Tag className="h-4 w-4 text-green-600" />
                         <div>
                           <p className="text-sm font-medium text-green-800">
                             {promoCode} applied ({promoDiscount}% off)
@@ -551,14 +562,14 @@ export default function CheckoutModal({
                       <button
                         type="button"
                         onClick={handleRemovePromoCode}
-                        className="px-3 py-1 text-xs bg-red-500 text-white rounded font-medium hover:bg-red-600 transition-colors"
+                        className="rounded bg-red-500 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-red-600"
                       >
                         Remove
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="border border-gray-200 rounded-lg p-3">
+                  <div className="rounded-lg border border-gray-200 p-3">
                     <div className="flex gap-2">
                       <input
                         type="text"
@@ -566,7 +577,7 @@ export default function CheckoutModal({
                         value={promoCode}
                         onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
                         placeholder="Enter promo code"
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
@@ -578,7 +589,7 @@ export default function CheckoutModal({
                         type="button"
                         onClick={handleApplyPromoCode}
                         disabled={isValidatingPromo || !promoCode.trim()}
-                        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {isValidatingPromo ? 'Checking...' : 'Apply'}
                       </button>
@@ -587,7 +598,7 @@ export default function CheckoutModal({
                     {promoMessage && (
                       <p
                         className={`mt-2 text-xs ${
-                          promoApplied ? 'text-green-600 font-medium' : 'text-red-600'
+                          promoApplied ? 'font-medium text-green-600' : 'text-red-600'
                         }`}
                       >
                         {promoMessage}
@@ -599,34 +610,34 @@ export default function CheckoutModal({
 
               {hasJetSki && (
                 <>
-                  <div className="bg-gray-900 text-white rounded-xl p-5 mt-6">
-                    <h3 className="font-bold text-lg mb-3">Age & Identification Requirements</h3>
+                  <div className="mt-6 rounded-xl bg-gray-900 p-5 text-white">
+                    <h3 className="mb-3 text-lg font-bold">Age & Identification Requirements</h3>
                     <ul className="space-y-2 text-sm">
                       <li className="flex items-start gap-2">
-                        <span className="text-cyan-400 mt-1">•</span>
+                        <span className="mt-1 text-cyan-400">•</span>
                         <span>Operators must be at least 14 years old</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="text-cyan-400 mt-1">•</span>
+                        <span className="mt-1 text-cyan-400">•</span>
                         <span>Renters must be at least 18 years old</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="text-cyan-400 mt-1">•</span>
+                        <span className="mt-1 text-cyan-400">•</span>
                         <span>Valid photo ID required</span>
                       </li>
                       <li className="flex items-start gap-2">
-                        <span className="text-cyan-400 mt-1">•</span>
+                        <span className="mt-1 text-cyan-400">•</span>
                         <span>Boating safety compliance required before operation</span>
                       </li>
                     </ul>
                   </div>
 
-                  <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
-                    <h3 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
-                      <Info className="w-5 h-5 text-blue-600" />
+                  <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-6">
+                    <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900">
+                      <Info className="h-5 w-5 text-blue-600" />
                       Jet Ski Operator Requirements
                     </h3>
-                    <p className="text-sm text-gray-700 mb-4">
+                    <p className="mb-4 text-sm text-gray-700">
                       Your cart includes a jet ski rental. Florida law requires the following
                       compliance information.
                     </p>
@@ -635,9 +646,9 @@ export default function CheckoutModal({
                       <div>
                         <label
                           htmlFor="operator-dob"
-                          className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2"
+                          className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700"
                         >
-                          <Calendar className="w-4 h-4 text-cyan-600" />
+                          <Calendar className="h-4 w-4 text-cyan-600" />
                           Operator Date of Birth <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -646,16 +657,16 @@ export default function CheckoutModal({
                           required={hasJetSki}
                           value={operatorDob}
                           onChange={(e) => setOperatorDob(e.target.value)}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white"
+                          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-cyan-500"
                           max={new Date().toISOString().split('T')[0]}
                         />
                         {operatorDob && calculateOperatorAge(operatorDob) < 14 && (
-                          <p className="text-sm text-red-600 mt-1 font-medium">
+                          <p className="mt-1 text-sm font-medium text-red-600">
                             Operator must be at least 14 years old
                           </p>
                         )}
                         {operatorDob && calculateOperatorAge(operatorDob) >= 14 && (
-                          <p className="text-sm text-green-600 mt-1">
+                          <p className="mt-1 text-sm text-green-600">
                             Operator age: {calculateOperatorAge(operatorDob)} years
                           </p>
                         )}
@@ -664,7 +675,7 @@ export default function CheckoutModal({
                       {operatorDob && new Date(operatorDob) >= new Date('1988-01-01') && (
                         <>
                           <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            <label className="mb-2 block text-sm font-semibold text-gray-700">
                               Do you currently possess a valid Boating Safety Education Card?{' '}
                               <span className="text-red-500">*</span>
                             </label>
@@ -677,7 +688,7 @@ export default function CheckoutModal({
                                   has_boater_card: e.target.value,
                                 })
                               }
-                              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent bg-white"
+                              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-cyan-500"
                             >
                               <option value="">Select</option>
                               <option value="yes">Yes</option>
@@ -687,11 +698,11 @@ export default function CheckoutModal({
 
                           {boatingCompliance.has_boater_card === 'yes' && (
                             <div>
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              <label className="mb-2 block text-sm font-semibold text-gray-700">
                                 Upload Your Boating Safety Card{' '}
                                 <span className="text-red-500">*</span>
                               </label>
-                              <div className="border-2 border-dashed border-cyan-300 rounded-lg p-4 bg-white">
+                              <div className="rounded-lg border-2 border-dashed border-cyan-300 bg-white p-4">
                                 <input
                                   type="file"
                                   required={hasJetSki}
@@ -705,11 +716,11 @@ export default function CheckoutModal({
                                   className="w-full text-sm text-gray-700"
                                 />
                                 {boatingSafetyCardFile && (
-                                  <p className="text-sm text-green-600 mt-2 font-medium">
+                                  <p className="mt-2 text-sm font-medium text-green-600">
                                     ✓ Card uploaded: {boatingSafetyCardFile.name}
                                   </p>
                                 )}
-                                <p className="text-xs text-gray-500 mt-2">
+                                <p className="mt-2 text-xs text-gray-500">
                                   Accepted formats: JPG, PNG, PDF
                                 </p>
                               </div>
@@ -717,8 +728,8 @@ export default function CheckoutModal({
                           )}
 
                           {boatingCompliance.has_boater_card === 'no' && (
-                            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                              <p className="text-sm text-red-700 font-medium mb-3">
+                            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                              <p className="mb-3 text-sm font-medium text-red-700">
                                 Florida law requires a Boating Safety Education Card for operators
                                 born on or after January 1, 1988. You must obtain this card before
                                 you can rent a jet ski.
@@ -730,7 +741,7 @@ export default function CheckoutModal({
                                     href="https://takemyboattest.com/"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="underline font-semibold hover:text-red-900"
+                                    className="font-semibold underline hover:text-red-900"
                                   >
                                     takemyboattest.com
                                   </a>
@@ -739,7 +750,7 @@ export default function CheckoutModal({
                                   <strong>Option 2:</strong> Already have your card?{' '}
                                   <a
                                     href="/upload-boating-card"
-                                    className="underline font-semibold hover:text-red-900"
+                                    className="font-semibold underline hover:text-red-900"
                                   >
                                     Upload it here
                                   </a>
@@ -750,8 +761,8 @@ export default function CheckoutModal({
                         </>
                       )}
 
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                        <label className="flex items-start gap-3 cursor-pointer">
+                      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                        <label className="flex cursor-pointer items-start gap-3">
                           <input
                             type="checkbox"
                             required={hasJetSki}
@@ -762,7 +773,7 @@ export default function CheckoutModal({
                                 certification_agreed: e.target.checked,
                               })
                             }
-                            className="mt-1 w-4 h-4 text-cyan-600 focus:ring-cyan-500 border-gray-300 rounded"
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                           />
                           <span className="text-sm text-gray-700">
                             I certify that the information provided is true and accurate. I
@@ -774,13 +785,13 @@ export default function CheckoutModal({
                     </div>
                   </div>
 
-                  <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6">
-                    <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                  <div className="rounded-xl border-2 border-yellow-200 bg-yellow-50 p-6">
+                    <h4 className="mb-4 flex items-center gap-2 font-bold text-gray-900">
+                      <AlertTriangle className="h-5 w-5 text-yellow-600" />
                       Required Acknowledgments
                     </h4>
                     <div className="space-y-3">
-                      <label className="flex items-start gap-3 cursor-pointer">
+                      <label className="flex cursor-pointer items-start gap-3">
                         <input
                           type="checkbox"
                           required={hasJetSki}
@@ -791,13 +802,13 @@ export default function CheckoutModal({
                               operator_age: e.target.checked,
                             })
                           }
-                          className="mt-1 w-5 h-5 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500"
+                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                         />
                         <span className="text-sm text-gray-700">
                           I confirm the operator is 14 years or older.
                         </span>
                       </label>
-                      <label className="flex items-start gap-3 cursor-pointer">
+                      <label className="flex cursor-pointer items-start gap-3">
                         <input
                           type="checkbox"
                           required={hasJetSki}
@@ -808,14 +819,14 @@ export default function CheckoutModal({
                               passenger_age: e.target.checked,
                             })
                           }
-                          className="mt-1 w-5 h-5 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500"
+                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                         />
                         <span className="text-sm text-gray-700">
                           I confirm any passenger is at least 6 years old, fits properly in a
                           USCG-approved life jacket, and can hold on independently.
                         </span>
                       </label>
-                      <label className="flex items-start gap-3 cursor-pointer">
+                      <label className="flex cursor-pointer items-start gap-3">
                         <input
                           type="checkbox"
                           required={hasJetSki}
@@ -826,13 +837,13 @@ export default function CheckoutModal({
                               backwater_only: e.target.checked,
                             })
                           }
-                          className="mt-1 w-5 h-5 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500"
+                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                         />
                         <span className="text-sm text-gray-700">
                           I understand this rental is backwater only and not for open Gulf use.
                         </span>
                       </label>
-                      <label className="flex items-start gap-3 cursor-pointer">
+                      <label className="flex cursor-pointer items-start gap-3">
                         <input
                           type="checkbox"
                           required={hasJetSki}
@@ -843,7 +854,7 @@ export default function CheckoutModal({
                               life_jackets: e.target.checked,
                             })
                           }
-                          className="mt-1 w-5 h-5 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500"
+                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
                         />
                         <span className="text-sm text-gray-700">
                           I understand life jackets are required and provided, and must be worn at
@@ -857,14 +868,14 @@ export default function CheckoutModal({
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
                 <p className="text-sm text-red-600">{error}</p>
               </div>
             )}
 
             {items.some((item) => item.type === 'property') && (
-              <div className="bg-gray-50 border border-gray-200 p-3 rounded-lg text-xs text-gray-600">
-                <p className="font-semibold text-gray-800 mb-2">Rental Terms & Conditions:</p>
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                <p className="mb-2 font-semibold text-gray-800">Rental Terms & Conditions:</p>
                 <p className="leading-relaxed">
                   By completing this booking, you agree to our rental policies including
                   check-in/check-out times, property rules, and security deposit terms. A $500
@@ -879,16 +890,16 @@ export default function CheckoutModal({
               onClick={(e) => handleCheckout(e)}
               onMouseDown={(e) => e.stopPropagation()}
               disabled={isLoading || uploadingCard || !customerEmail || !customerName}
-              className="w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg font-semibold hover:from-blue-700 hover:to-cyan-700 transition-all shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {uploadingCard ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin" />
                   Uploading Document...
                 </>
               ) : isLoading ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="h-5 w-5 animate-spin" />
                   Redirecting to secure checkout...
                 </>
               ) : (
@@ -896,7 +907,7 @@ export default function CheckoutModal({
               )}
             </button>
 
-            <p className="text-xs text-center text-gray-500">
+            <p className="text-center text-xs text-gray-500">
               You will be redirected to Stripe&apos;s secure payment page
             </p>
           </div>
