@@ -20,22 +20,19 @@ export default function ActivitiesAdmin() {
   }, []);
 
   async function loadActivities() {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('activities')
       .select('*')
       .order('created_at');
 
-    if (!error && data) {
-      setActivities(data);
-    }
-
+    setActivities(data || []);
     setLoading(false);
   }
 
-  async function toggleActive(id: string, active: boolean) {
+  async function updateField(id: string, field: string, value: any) {
     await supabase
       .from('activities')
-      .update({ active: !active })
+      .update({ [field]: value })
       .eq('id', id);
 
     loadActivities();
@@ -44,55 +41,59 @@ export default function ActivitiesAdmin() {
   if (loading) return <div>Loading activities...</div>;
 
   return (
-    <div>
+    <div className="space-y-6">
 
-      <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 20 }}>
-        Activities
-      </h2>
+      <h2 className="text-2xl font-bold">Activities Admin</h2>
 
-      <div style={{ display: 'grid', gap: 12 }}>
+      {activities.map((a) => (
+        <div key={a.id} className="border p-4 rounded bg-white space-y-3">
 
-        {activities.map((activity) => (
+          <input
+            value={a.name}
+            onChange={(e) => updateField(a.id, 'name', e.target.value)}
+            className="border p-2 w-full"
+            placeholder="Name"
+          />
 
-          <div
-            key={activity.id}
-            style={{
-              padding: 14,
-              borderRadius: 8,
-              background: '#fff',
-              border: '1px solid #ddd'
-            }}
+          <textarea
+            value={a.description}
+            onChange={(e) => updateField(a.id, 'description', e.target.value)}
+            className="border p-2 w-full"
+            placeholder="Description"
+          />
+
+          <input
+            type="number"
+            value={a.base_price}
+            onChange={(e) => updateField(a.id, 'base_price', Number(e.target.value))}
+            className="border p-2 w-full"
+          />
+
+          <input
+            value={a.image_url}
+            onChange={(e) => updateField(a.id, 'image_url', e.target.value)}
+            className="border p-2 w-full"
+            placeholder="Main Image URL"
+          />
+
+          <textarea
+            value={(a.gallery_images || []).join('\n')}
+            onChange={(e) =>
+              updateField(a.id, 'gallery_images', e.target.value.split('\n'))
+            }
+            className="border p-2 w-full"
+            placeholder="Gallery image URLs (one per line)"
+          />
+
+          <button
+            onClick={() => updateField(a.id, 'active', !a.active)}
+            className="bg-blue-600 text-white px-4 py-2 rounded"
           >
+            {a.active ? 'Active' : 'Inactive'}
+          </button>
 
-            <strong>{activity.name}</strong>
-
-            <div style={{ marginTop: 6 }}>
-              ${activity.base_price}
-            </div>
-
-            <div style={{ marginTop: 10 }}>
-
-              <button
-                onClick={() => toggleActive(activity.id, activity.active)}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: 6,
-                  border: 'none',
-                  background: activity.active ? '#16a34a' : '#9ca3af',
-                  color: '#fff',
-                  cursor: 'pointer'
-                }}
-              >
-                {activity.active ? 'Active' : 'Inactive'}
-              </button>
-
-            </div>
-
-          </div>
-
-        ))}
-
-      </div>
+        </div>
+      ))}
 
     </div>
   );
