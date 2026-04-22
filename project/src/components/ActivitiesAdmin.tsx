@@ -82,16 +82,19 @@ export default function ActivitiesAdmin() {
   async function saveActivity(activity: Activity) {
     setSavingId(activity.id);
 
-    const payload = {
-      name: activity.name || '',
-      description: activity.description || '',
-      duration_hours: Number(activity.duration_hours || 0),
-      capacity: Number(activity.capacity || 0),
-      price: Number(activity.price || 0),
-      image_url: activity.image_url || '',
-      gallery_images: activity.gallery_images || [],
-      active: !!activity.active,
-    };
+   const cleanName = newActivity.name.trim();
+
+const payload = {
+  name: cleanName,
+  title: cleanName,
+  description: newActivity.description.trim(),
+  duration_hours: Number(newActivity.duration_hours || 0),
+  capacity: Number(newActivity.capacity || 0),
+  price: Number(newActivity.price || 0),
+  image_url: newActivity.image_url || '',
+  gallery_images: newGalleryFiles,
+  active: true,
+};
 
     const { error } = await supabase.from('activities').update(payload).eq('id', activity.id);
 
@@ -241,16 +244,19 @@ export default function ActivitiesAdmin() {
     setCreating(true);
 
     try {
-      const payload = {
-        name: newActivity.name.trim(),
-        description: newActivity.description.trim(),
-        duration_hours: Number(newActivity.duration_hours || 0),
-        capacity: Number(newActivity.capacity || 0),
-        price: Number(newActivity.price || 0),
-        image_url: newActivity.image_url || '',
-        gallery_images: newGalleryFiles,
-        active: true,
-      };
+     const cleanName = activity.name || '';
+
+const payload = {
+  name: cleanName,
+  title: cleanName,
+  description: activity.description || '',
+  duration_hours: Number(activity.duration_hours || 0),
+  capacity: Number(activity.capacity || 0),
+  price: Number(activity.price || 0),
+  image_url: activity.image_url || '',
+  gallery_images: activity.gallery_images || [],
+  active: !!activity.active,
+};
 
       const { error } = await supabase.from('activities').insert([payload]);
 
