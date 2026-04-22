@@ -7,7 +7,7 @@ import { RentalBookingsAdmin } from './RentalBookingsAdmin';
 import { AdminCalendarView } from './AdminCalendarView';
 import { PromoCodesAdmin } from './PromoCodesAdmin';
 import { PromoBannerAdmin } from './PromoBannerAdmin';
-import SiteSettings from './SiteSettings';
+import { SiteSettings } from './SiteSettings';
 import { TaxReport } from './TaxReport';
 
 type Tab =
