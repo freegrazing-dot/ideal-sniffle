@@ -322,12 +322,7 @@ function HomePage() {
         />
       )}
 
-      <MerchandiseModal
-        isOpen={isMerchandiseModalOpen}
-        onClose={() => setIsMerchandiseModalOpen(false)}
-        items={merchandiseItems}
-        onAddToCart={handleAddMerchandise}
-      />
+      
     </div>
   );
 }
