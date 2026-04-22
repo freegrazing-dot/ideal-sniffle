@@ -162,8 +162,14 @@ export default function CheckoutModal({
     onPromoChange?.('', 0);
   };
 
-  const discountAmount = (subtotal * promoDiscount) / 100;
-  const discountedSubtotal = subtotal - discountAmount;
+  const safeSubtotal = subtotal ?? 0;
+  const safeLodgingTax = lodgingTax ?? 0;
+  const safeSalesTax = salesTax ?? 0;
+  const safeDepositAmount = depositAmount ?? 0;
+  const safeTotalAmount = totalAmount ?? 0;
+
+  const discountAmount = (safeSubtotal * promoDiscount) / 100;
+  const discountedSubtotal = safeSubtotal - discountAmount;
 
   const propertySubtotal = items
     .filter((item) => item.type === 'property')
@@ -174,11 +180,13 @@ export default function CheckoutModal({
     .reduce((sum, item) => sum + (item.price ?? 0), 0);
 
   const propertyDiscount =
-    propertySubtotal > 0 && subtotal > 0 ? (discountAmount * propertySubtotal) / subtotal : 0;
+    propertySubtotal > 0 && safeSubtotal > 0
+      ? (discountAmount * propertySubtotal) / safeSubtotal
+      : 0;
 
   const activityMerchandiseDiscount =
-    activityMerchandiseSubtotal > 0 && subtotal > 0
-      ? (discountAmount * activityMerchandiseSubtotal) / subtotal
+    activityMerchandiseSubtotal > 0 && safeSubtotal > 0
+      ? (discountAmount * activityMerchandiseSubtotal) / safeSubtotal
       : 0;
 
   const discountedPropertySubtotal = propertySubtotal - propertyDiscount;
@@ -186,17 +194,17 @@ export default function CheckoutModal({
     activityMerchandiseSubtotal - activityMerchandiseDiscount;
 
   const adjustedLodgingTax =
-    hasProperties && promoDiscount > 0 ? discountedPropertySubtotal * 0.115 : lodgingTax;
+    hasProperties && promoDiscount > 0 ? discountedPropertySubtotal * 0.115 : safeLodgingTax;
 
   const adjustedSalesTax =
     (hasActivities || hasMerchandise) && promoDiscount > 0
       ? discountedActivityMerchandiseSubtotal * 0.065
-      : salesTax;
+      : safeSalesTax;
 
   const finalTotal =
     promoDiscount > 0
       ? discountedSubtotal + adjustedLodgingTax + adjustedSalesTax
-      : totalAmount;
+      : safeTotalAmount;
 
   useEffect(() => {
     if (isOpen) {
@@ -332,9 +340,9 @@ export default function CheckoutModal({
         items,
         customerEmail,
         customerName,
-        subtotal,
-        lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : lodgingTax,
-        salesTax: promoDiscount > 0 ? adjustedSalesTax : salesTax,
+        subtotal: safeSubtotal,
+        lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax,
+        salesTax: promoDiscount > 0 ? adjustedSalesTax : safeSalesTax,
         totalPrice: finalTotal,
         operatorDob: hasJetSki ? operatorDob : undefined,
         boatingSafetyCardUrl: boatingSafetyCardUrl || undefined,
@@ -412,7 +420,7 @@ export default function CheckoutModal({
 
         <div className="p-6">
           <div className="space-y-6">
-            {items.some((item) => item.type === 'property') && depositAmount > 0 && (
+            {items.some((item) => item.type === 'property') && safeDepositAmount > 0 && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
                 <div className="flex items-start gap-3">
                   <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
@@ -420,10 +428,10 @@ export default function CheckoutModal({
                   </div>
                   <div className="flex-1">
                     <h3 className="mb-1 text-sm font-semibold text-gray-900">
-                      ${(depositAmount ?? 0).toFixed(0)} Security Deposit Authorization (Hold)
+                      {safeDepositAmount.toFixed(0)} Security Deposit Authorization (Hold)
                     </h3>
                     <p className="text-xs leading-relaxed text-gray-600">
-                      Your cart includes vacation rental(s). A ${depositAmount.toFixed(0)} hold
+                      Your cart includes vacation rental(s). A {safeDepositAmount.toFixed(0)} hold
                       will be placed on your card but NOT charged. The hold will be automatically
                       released after checkout if there are no damages.
                     </p>
@@ -454,11 +462,13 @@ export default function CheckoutModal({
                 </div>
               ))}
 
-              {(depositAmount > 0 || lodgingTax > 0 || salesTax > 0 || promoApplied) && (
+              {(safeDepositAmount > 0 || safeLodgingTax > 0 || safeSalesTax > 0 || promoApplied) && (
                 <>
                   <div className="flex justify-between border-t border-gray-200 pt-2 text-sm">
                     <span className="text-gray-700">Subtotal</span>
-                    <span className="font-medium text-gray-900">${(subtotal ?? 0).toFixed(2)}</span>
+                    <span className="font-medium text-gray-900">
+                      ${safeSubtotal.toFixed(2)}
+                    </span>
                   </div>
 
                   {promoApplied && promoDiscount > 0 && (
@@ -467,36 +477,36 @@ export default function CheckoutModal({
                         Discount ({promoDiscount}%) - {promoCode}
                       </span>
                       <span className="font-medium text-green-600">
-                        -${(discountAmount ?? 0).toFixed(2)}
+                        -${discountAmount.toFixed(2)}
                       </span>
                     </div>
                   )}
 
-                  {(adjustedSalesTax > 0 || salesTax > 0) && (
+                  {(adjustedSalesTax > 0 || safeSalesTax > 0) && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-700">Sales Tax (6.5%)</span>
                       <span className="font-medium text-gray-900">
-                        ${((promoDiscount > 0 ? adjustedSalesTax : salesTax) ?? 0).toFixed(2)}
+                        ${(promoDiscount > 0 ? adjustedSalesTax : safeSalesTax).toFixed(2)}
                       </span>
                     </div>
                   )}
 
-                  {(adjustedLodgingTax > 0 || lodgingTax > 0) && (
+                  {(adjustedLodgingTax > 0 || safeLodgingTax > 0) && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-700">Lodging Tax (11.5%)</span>
                       <span className="font-medium text-gray-900">
-                          {((promoDiscount > 0 ? adjustedLodgingTax : lodgingTax) ?? 0).toFixed(2)}
+                        ${(promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax).toFixed(2)}
                       </span>
                     </div>
                   )}
 
-                  {depositAmount > 0 && (
+                  {safeDepositAmount > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="font-medium text-yellow-700">
                         Security Deposit (Hold - Not Charged)
                       </span>
                       <span className="font-medium text-yellow-700">
-                        ${(depositAmount ?? 0).toFixed(2)}
+                        ${safeDepositAmount.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -505,7 +515,9 @@ export default function CheckoutModal({
 
               <div className="flex justify-between border-t-2 border-gray-300 pt-3">
                 <span className="font-semibold text-gray-900">Total</span>
-                <span className="text-xl font-bold text-blue-600">${(finalTotal ?? 0).toFixed(2)}</span>
+                <span className="text-xl font-bold text-blue-600">
+                  ${finalTotal.toFixed(2)}
+                </span>
               </div>
             </div>
 
@@ -865,51 +877,51 @@ export default function CheckoutModal({
                   </div>
                 </>
               )}
-            </div>
 
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                <p className="text-sm text-red-600">{error}</p>
-              </div>
-            )}
-
-            {items.some((item) => item.type === 'property') && (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-                <p className="mb-2 font-semibold text-gray-800">Rental Terms & Conditions:</p>
-                <p className="leading-relaxed">
-                  By completing this booking, you agree to our rental policies including
-                  check-in/check-out times, property rules, and security deposit terms. A $500
-                  authorization hold will be placed on your card but will not be charged unless
-                  damages occur.
-                </p>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={(e) => handleCheckout(e)}
-              onMouseDown={(e) => e.stopPropagation()}
-              disabled={isLoading || uploadingCard || !customerEmail || !customerName}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {uploadingCard ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Uploading Document...
-                </>
-              ) : isLoading ? (
-                <>
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  Redirecting to secure checkout...
-                </>
-              ) : (
-                'Proceed to Secure Checkout'
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
               )}
-            </button>
 
-            <p className="text-center text-xs text-gray-500">
-              You will be redirected to Stripe&apos;s secure payment page
-            </p>
+              {items.some((item) => item.type === 'property') && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+                  <p className="mb-2 font-semibold text-gray-800">Rental Terms & Conditions:</p>
+                  <p className="leading-relaxed">
+                    By completing this booking, you agree to our rental policies including
+                    check-in/check-out times, property rules, and security deposit terms. A $500
+                    authorization hold will be placed on your card but will not be charged unless
+                    damages occur.
+                  </p>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => handleCheckout(e)}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={isLoading || uploadingCard || !customerEmail || !customerName}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {uploadingCard ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Uploading Document...
+                  </>
+                ) : isLoading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Redirecting to secure checkout...
+                  </>
+                ) : (
+                  'Proceed to Secure Checkout'
+                )}
+              </button>
+
+              <p className="text-center text-xs text-gray-500">
+                You will be redirected to Stripe&apos;s secure payment page
+              </p>
+            </div>
           </div>
         </div>
       </div>
