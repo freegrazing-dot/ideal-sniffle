@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
 import {
-  X,
-  Loader as Loader2,
+  Loader2,
   Info,
-  TriangleAlert as AlertTriangle,
+  AlertTriangle,
   Calendar,
   Tag
-} from 'lucide-react';
-import type { CartItem } from '../lib/cart-context';
+} from 'lucide-react';import type { CartItem } from '../lib/cart-context';
 import { supabase } from '../lib/supabase';
 
 interface CheckoutModalProps {
