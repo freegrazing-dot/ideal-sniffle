@@ -242,17 +242,17 @@ export default function ActivitiesAdmin() {
             </div>
 
             <div>
-              <label className="block text-xs mb-1">Base Price</label>
+              <label className="block text-xs mb-1">Price</label>
               <input
                 type="number"
                 value={activity.price ?? ''}
-onChange={(e) =>
-  updateLocalActivity(
-    activity.id,
-    'price',
-    Number(e.target.value)
-  )
-}
+                onChange={(e) =>
+                  updateLocalActivity(
+                    activity.id,
+                    'price',
+                    Number(e.target.value)
+                  )
+                }
                 className="border p-2 w-full rounded"
               />
             </div>
