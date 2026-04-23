@@ -293,7 +293,7 @@ export default function CheckoutModal({
                   value={promoCode}
                   onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
                   className="flex-1 rounded-lg border px-3 py-2"
-                  placeholder="TKAC20"
+                  placeholder="Enter promo code"
                 />
                 <button
                   type="button"
