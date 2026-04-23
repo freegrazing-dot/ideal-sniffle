@@ -8,8 +8,8 @@ type MerchandiseRow = {
   description: string | null;
   price: number | null;
   category: string | null;
-  sizes: string[] | null;
-  colors: string[] | null;
+ 
+ 
   image_url: string | null;
   stock_quantity: number | null;
   active: boolean | null;
@@ -22,8 +22,7 @@ const emptyForm = {
   category: '',
   price: '',
   stock_quantity: '',
-  sizes: '',
-  colors: '',
+  
   active: true,
 };
 
@@ -96,15 +95,12 @@ export default function MerchandiseAdmin() {
     try {
       const imageUrl = await handleMainImageUpload();
 
-     const payload = {
+    const payload = {
   name: form.name.trim(),
   description: form.description.trim() || null,
   category: form.category.trim() || null,
   price: Number(form.price),
   stock_quantity: form.stock_quantity.trim() ? Number(form.stock_quantity) : 0,
-  sizes: form.sizes.trim()
-    ? form.sizes.split(',').map((s) => s.trim()).filter(Boolean)
-    : [],
   image_url: imageUrl,
   active: form.active,
 };
@@ -359,7 +355,7 @@ export default function MerchandiseAdmin() {
                   <div>Price: ${(product.price ?? 0).toFixed(2)}</div>
                   <div>Stock: {product.stock_quantity ?? 0}</div>
                   <div>Status: {product.active ? 'Active' : 'Inactive'}</div>
-                  <div>Sizes: {product.sizes?.join(', ') || 'None'}</div>
+                  
                   
                 </div>
 
