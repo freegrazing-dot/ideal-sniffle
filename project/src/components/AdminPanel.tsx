@@ -1,12 +1,11 @@
+import MerchandiseAdmin from './MerchandiseAdmin';
 import { useState } from 'react';
 
 import PropertiesAdmin from './PropertiesAdmin';
 import ActivitiesAdmin from './ActivitiesAdmin';
-
 import { RentalBookingsAdmin } from './RentalBookingsAdmin';
 import { AdminCalendarView } from './AdminCalendarView';
 import { PromoCodesAdmin } from './PromoCodesAdmin';
-import { PromoBannerAdmin } from './PromoBannerAdmin';
 import { SiteSettings } from './SiteSettings';
 import { TaxReport } from './TaxReport';
 
@@ -16,7 +15,6 @@ type Tab =
   | 'bookings'
   | 'calendar'
   | 'promo'
-  | 'banners'
   | 'settings'
   | 'tax'
   | 'merch';
@@ -50,8 +48,6 @@ export default function AdminPanel() {
 
   return (
     <div className="p-6">
-
-      {/* tabs */}
       <div
         style={{
           display: 'flex',
@@ -65,39 +61,21 @@ export default function AdminPanel() {
         <TabButton id="bookings" label="Bookings" />
         <TabButton id="calendar" label="Calendar" />
         <TabButton id="promo" label="Promo Codes" />
-        <TabButton id="banners" label="Banners" />
         <TabButton id="settings" label="Settings" />
         <TabButton id="tax" label="Tax Report" />
         <TabButton id="merch" label="Merch" />
       </div>
 
-      {/* tab content */}
       <div>
-
         {activeTab === 'properties' && <PropertiesAdmin />}
-
         {activeTab === 'activities' && <ActivitiesAdmin />}
-
         {activeTab === 'bookings' && <RentalBookingsAdmin />}
-
         {activeTab === 'calendar' && <AdminCalendarView />}
-
         {activeTab === 'promo' && <PromoCodesAdmin />}
-
-        {activeTab === 'banners' && <PromoBannerAdmin />}
-
         {activeTab === 'settings' && <SiteSettings />}
-
         {activeTab === 'tax' && <TaxReport />}
-
-        {activeTab === 'merch' && (
-          <div style={{ padding: 20 }}>
-            Merch admin loading...
-          </div>
-        )}
-
+        {activeTab === 'merch' && <MerchandiseAdmin />}
       </div>
-
     </div>
   );
 }
