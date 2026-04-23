@@ -88,20 +88,25 @@ function HomePage() {
     setSelectedActivity(activity);
     setIsAddToCartModalOpen(true);
   };
+const handleAddMerchandise = async (
+  item: MerchandiseItem,
+  size: string,
+  color: string,
+  quantity: number
+) => {
+  await addMerchandiseItem({
+    merchandiseId: item.id,
+    name: item.name,
+    size: size || '',
+    color: color || '',
+    quantity,
+    price: item.price,
+    description: item.description,
+  });
 
-  const handleAddMerchandise = async (item: MerchandiseItem, size: string, color: string, quantity: number) => {
-    await addMerchandiseItem({
-      merchandiseId: item.id,
-      name: item.name,
-      size,
-      color,
-      quantity,
-      price: item.price,
-      description: item.description,
-    });
-    setIsCartModalOpen(true);
-  };
-
+  setIsMerchandiseModalOpen(false);
+  setIsCartModalOpen(true);
+};
   return (
     <div className="min-h-screen bg-slate-50">
       <Hero />
