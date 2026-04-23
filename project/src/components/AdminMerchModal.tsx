@@ -42,17 +42,21 @@ export default function AdminMerchModal({
     (item.category || '').toLowerCase().includes('apparel') ||
     item.name.toLowerCase().includes('shirt');
 
-  const getAvailableSizes = (item: ModalMerchandiseItem) => {
-    if (Array.isArray(item.sizes) && item.sizes.length > 0) {
-      return item.sizes;
-    }
+ const getAvailableSizes = (item: ModalMerchandiseItem) => {
+  if (Array.isArray(item.sizes) && item.sizes.length > 0) {
+    return item.sizes;
+  }
 
-    if (isApparelItem(item)) {
-      return DEFAULT_APPAREL_SIZES;
-    }
+  if (typeof item.sizes === 'string' && item.sizes.trim()) {
+    return item.sizes.split(',').map((s) => s.trim()).filter(Boolean);
+  }
 
-    return [];
-  };
+  if (isApparelItem(item)) {
+    return DEFAULT_APPAREL_SIZES;
+  }
+
+  return [];
+};
 
   const getAvailableColors = (item: ModalMerchandiseItem) => {
     if (Array.isArray(item.colors) && item.colors.length > 0) {

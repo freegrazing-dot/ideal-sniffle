@@ -1,931 +1,455 @@
-import { useState, useEffect } from 'react';
-import {
-  Loader2,
-  Info,
-  AlertTriangle,
-  Calendar,
-  Tag,
-  X,
-} from 'lucide-react';
-
-import type { CartItem } from '../lib/cart-context';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { uploadImage } from '../lib/storage';
 
-interface CheckoutModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  items: CartItem[];
-  totalAmount: number;
-  subtotal: number;
-  lodgingTax: number;
-  salesTax: number;
-  depositAmount: number;
-  promoCode?: string;
-  promoDiscount?: number;
-  onSuccess: () => void;
-  onPromoChange?: (code: string, discount: number) => void;
-}
+type MerchandiseRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number | null;
+  category: string | null;
+  image_url: string | null;
+  back_image_url: string | null;
+  sizes: string | null;
+  active: boolean | null;
+  created_at?: string | null;
+};
 
-export default function CheckoutModal({
-  isOpen,
-  onClose,
-  items,
-  totalAmount,
-  subtotal,
-  lodgingTax,
-  salesTax,
-  depositAmount,
-  promoCode: initialPromoCode,
-  promoDiscount: initialPromoDiscount,
-  onSuccess: _onSuccess,
-  onPromoChange,
-}: CheckoutModalProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [operatorDob, setOperatorDob] = useState('');
-  const [boatingSafetyCardFile, setBoatingSafetyCardFile] = useState<File | null>(null);
-  const [uploadingCard, setUploadingCard] = useState(false);
-  const [boatingCompliance, setBoatingCompliance] = useState({
-    has_boater_card: '',
-    certification_agreed: false,
-  });
-  const [acknowledgments, setAcknowledgments] = useState({
-    operator_age: false,
-    passenger_age: false,
-    backwater_only: false,
-    life_jackets: false,
-  });
-  const [promoCode, setPromoCode] = useState(initialPromoCode || '');
-  const [promoDiscount, setPromoDiscount] = useState(initialPromoDiscount || 0);
-  const [promoMessage, setPromoMessage] = useState('');
-  const [promoApplied, setPromoApplied] =
-    useState(!!initialPromoCode && (initialPromoDiscount || 0) > 0);
-  const [isValidatingPromo, setIsValidatingPromo] = useState(false);
-  const [allowBackdropClick, setAllowBackdropClick] = useState(false);
+type MerchandiseForm = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  price: string;
+  sizes: string;
+  image_url: string;
+  back_image_url: string;
+  active: boolean;
+};
 
-  const hasJetSki = items.some(
-    (item) => item.type === 'activity' && item.activity?.name?.toLowerCase().includes('jet ski')
-  );
+const emptyForm: MerchandiseForm = {
+  id: '',
+  name: '',
+  description: '',
+  category: '',
+  price: '',
+  sizes: '',
+  image_url: '',
+  back_image_url: '',
+  active: true,
+};
 
-  const hasProperties = items.some((item) => item.type === 'property');
-  const hasActivities = items.some((item) => item.type === 'activity');
-  const hasMerchandise = items.some((item) => item.type === 'merchandise');
+export default function MerchandiseAdmin() {
+  const [products, setProducts] = useState<MerchandiseRow[]>([]);
+  const [form, setForm] = useState<MerchandiseForm>(emptyForm);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
 
-  const getOrderType = () => {
-    if (hasProperties) return 'properties';
-    if (hasMerchandise) return 'merch';
-    return 'activities';
-  };
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [backImageFile, setBackImageFile] = useState<File | null>(null);
 
-  const calculateOperatorAge = (dob: string): number => {
-    if (!dob) return 0;
+  const fetchProducts = async () => {
+    setLoading(true);
+    setMessage('');
 
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
+    const { data, error } = await supabase
+      .from('merchandise_items')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-
-    return age;
-  };
-
-  const handleApplyPromoCode = async () => {
-    const codeToUse = promoCode.trim().toUpperCase();
-
-    if (!codeToUse) {
-      setPromoMessage('Please enter a promo code');
-      setPromoApplied(false);
-      setPromoDiscount(0);
+    if (error) {
+      console.error('Error loading merchandise items:', error);
+      setProducts([]);
+      setMessage(`Error loading merchandise items: ${error.message}`);
+      setLoading(false);
       return;
     }
 
-    setIsValidatingPromo(true);
-    setPromoMessage('');
-
-    try {
-      const { data, error } = await supabase.rpc('validate_promo_code', {
-        code_text: codeToUse,
-        applies_to_type: getOrderType(),
-      });
-
-      if (error) {
-        console.error('Promo code validation error:', error);
-        setPromoApplied(false);
-        setPromoDiscount(0);
-        setPromoMessage('Error validating promo code');
-        return;
-      }
-
-      if (!data || data.length === 0) {
-        setPromoApplied(false);
-        setPromoDiscount(0);
-        setPromoMessage('Invalid or expired promo code');
-        return;
-      }
-
-      const result = data[0];
-
-      if (result.is_valid) {
-      console.log('PROMO RESULT:', result);
-        const nextDiscount =
-  Number(result.discount_percent ?? result.discount_percentage ?? result.discount_value) || 0;
-
-        setPromoCode(codeToUse);
-        setPromoApplied(true);
-        setPromoDiscount(nextDiscount);
-        setPromoMessage(result.message || 'Promo code applied!');
-
-        onPromoChange?.(codeToUse, nextDiscount);
-      } else {
-        setPromoApplied(false);
-        setPromoDiscount(0);
-        setPromoMessage(result.message || 'Invalid or expired promo code');
-      }
-    } catch (err) {
-      console.error('Error applying promo code:', err);
-      setPromoApplied(false);
-      setPromoDiscount(0);
-      setPromoMessage('Error applying promo code');
-    } finally {
-      setIsValidatingPromo(false);
-    }
+    setProducts((data as MerchandiseRow[]) || []);
+    setLoading(false);
   };
 
-  const handleRemovePromoCode = () => {
-    setPromoCode('');
-    setPromoDiscount(0);
-    setPromoMessage('');
-    setPromoApplied(false);
-    onPromoChange?.('', 0);
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const resetForm = () => {
+    setForm(emptyForm);
+    setEditing(false);
+    setMainImageFile(null);
+    setBackImageFile(null);
+    setMessage('');
   };
 
-  const safeSubtotal = subtotal ?? 0;
-  const safeLodgingTax = lodgingTax ?? 0;
-  const safeSalesTax = salesTax ?? 0;
-  const safeDepositAmount = depositAmount ?? 0;
-  const safeTotalAmount = totalAmount ?? 0;
+  const upload = async (file: File | null) => {
+    if (!file) return null;
 
-  const discountAmount = (safeSubtotal * promoDiscount) / 100;
-  const discountedSubtotal = safeSubtotal - discountAmount;
+    const result = await uploadImage(file, 'merchandise');
 
-  const propertySubtotal = items
-    .filter((item) => item.type === 'property')
-    .reduce((sum, item) => sum + (item.price ?? 0), 0);
-
-  const activityMerchandiseSubtotal = items
-    .filter((item) => item.type === 'activity' || item.type === 'merchandise')
-    .reduce((sum, item) => sum + (item.price ?? 0), 0);
-
-  const propertyDiscount =
-    propertySubtotal > 0 && safeSubtotal > 0
-      ? (discountAmount * propertySubtotal) / safeSubtotal
-      : 0;
-
-  const activityMerchandiseDiscount =
-    activityMerchandiseSubtotal > 0 && safeSubtotal > 0
-      ? (discountAmount * activityMerchandiseSubtotal) / safeSubtotal
-      : 0;
-
-  const discountedPropertySubtotal = propertySubtotal - propertyDiscount;
-  const discountedActivityMerchandiseSubtotal =
-    activityMerchandiseSubtotal - activityMerchandiseDiscount;
-
-  const adjustedLodgingTax =
-    hasProperties && promoDiscount > 0 ? discountedPropertySubtotal * 0.115 : safeLodgingTax;
-
-  const adjustedSalesTax =
-    (hasActivities || hasMerchandise) && promoDiscount > 0
-      ? discountedActivityMerchandiseSubtotal * 0.065
-      : safeSalesTax;
-
-  const finalTotal =
-    promoDiscount > 0
-      ? discountedSubtotal + adjustedLodgingTax + adjustedSalesTax
-      : safeTotalAmount;
-
-  useEffect(() => {
-    if (isOpen) {
-      setError(null);
-      setCustomerEmail('');
-      setCustomerName('');
-      setOperatorDob('');
-      setBoatingSafetyCardFile(null);
-      setBoatingCompliance({
-        has_boater_card: '',
-        certification_agreed: false,
-      });
-      setAcknowledgments({
-        operator_age: false,
-        passenger_age: false,
-        backwater_only: false,
-        life_jackets: false,
-      });
-
-      setAllowBackdropClick(false);
-      const timer = setTimeout(() => {
-        setAllowBackdropClick(true);
-      }, 500);
-
-      return () => clearTimeout(timer);
+    if (!result || result.error || !result.url) {
+      throw new Error(result?.error || 'Image upload failed');
     }
 
-    supabase.rpc('cleanup_expired_bookings').then(({ error }) => {
-      if (error) {
-        console.error('Failed to cleanup expired bookings:', error);
-      }
-    });
-  }, [isOpen]);
+    return result.url;
+  };
 
-  useEffect(() => {
-    setPromoApplied(false);
-    setPromoCode('');
-    setPromoDiscount(0);
-    setPromoMessage('');
-  }, [items]);
+  const handleSave = async () => {
+    setMessage('');
 
-  const handleCheckout = async (e?: React.MouseEvent) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
-    if (!customerEmail || !customerName) {
-      setError('Please enter your name and email');
+    if (!form.name.trim()) {
+      setMessage('Product name is required.');
       return;
     }
 
-    if (hasJetSki) {
-      if (!operatorDob) {
-        setError('Operator date of birth is required for jet ski rentals');
-        return;
-      }
-
-      const operatorAge = calculateOperatorAge(operatorDob);
-      if (operatorAge < 14) {
-        setError('Operator must be at least 14 years old to operate a jet ski');
-        return;
-      }
-
-      const bornAfter1988 = new Date(operatorDob) >= new Date('1988-01-01');
-
-      if (bornAfter1988) {
-        if (!boatingCompliance.has_boater_card) {
-          setError('Please indicate if you have a Boating Safety Education Card');
-          return;
-        }
-
-        if (boatingCompliance.has_boater_card === 'no') {
-          setError(
-            'Florida law requires a Boating Safety Education Card for operators born on or after January 1, 1988'
-          );
-          return;
-        }
-
-        if (!boatingSafetyCardFile) {
-          setError('Please upload your Boating Safety Education Card');
-          return;
-        }
-      }
-
-      if (!boatingCompliance.certification_agreed) {
-        setError('You must certify that the information provided is true and accurate');
-        return;
-      }
-
-      if (
-        !acknowledgments.operator_age ||
-        !acknowledgments.passenger_age ||
-        !acknowledgments.backwater_only ||
-        !acknowledgments.life_jackets
-      ) {
-        setError('Please confirm all required acknowledgments');
-        return;
-      }
+    if (!form.price.trim() || Number.isNaN(Number(form.price))) {
+      setMessage('Valid price is required.');
+      return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    if (!editing && !mainImageFile && !form.image_url) {
+      setMessage('Front image is required for a new product.');
+      return;
+    }
+
+    setSaving(true);
 
     try {
-      let boatingSafetyCardUrl: string | null = null;
+      const front = await upload(mainImageFile);
+      const back = await upload(backImageFile);
 
-      if (hasJetSki && boatingSafetyCardFile) {
-        setUploadingCard(true);
-
-        const fileExt = boatingSafetyCardFile.name.split('.').pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('boating-cards')
-          .upload(fileName, boatingSafetyCardFile);
-
-        if (uploadError) {
-          throw new Error('Failed to upload boating safety card');
-        }
-
-        const {
-          data: { publicUrl },
-        } = supabase.storage.from('boating-cards').getPublicUrl(uploadData.path);
-
-        boatingSafetyCardUrl = publicUrl;
-        setUploadingCard(false);
-      }
-
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`;
-
-      const paymentData = {
-        items,
-        customerEmail,
-        customerName,
-        subtotal: safeSubtotal,
-        lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax,
-        salesTax: promoDiscount > 0 ? adjustedSalesTax : safeSalesTax,
-        totalPrice: finalTotal,
-        operatorDob: hasJetSki ? operatorDob : undefined,
-        boatingSafetyCardUrl: boatingSafetyCardUrl || undefined,
-        acknowledgments: hasJetSki ? acknowledgments : undefined,
-        promoCode: promoApplied ? promoCode : undefined,
-        promoDiscount: promoApplied ? promoDiscount : undefined,
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        category: form.category.trim() || null,
+        price: Number(form.price),
+        sizes: form.sizes.trim() || null,
+        image_url: front || form.image_url || null,
+        back_image_url: back || form.back_image_url || null,
+        active: form.active,
       };
 
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(paymentData),
-      });
+      if (editing) {
+        const { error } = await supabase
+          .from('merchandise_items')
+          .update(payload)
+          .eq('id', form.id);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Failed to create checkout session (${response.status})`);
+        if (error) throw error;
+
+        setMessage('Product updated successfully.');
+      } else {
+        const { error } = await supabase.from('merchandise_items').insert([payload]);
+
+        if (error) throw error;
+
+        setMessage('Product saved successfully.');
       }
 
-      const data = await response.json();
-
-      if (!data.url) {
-        throw new Error('No checkout URL received');
-      }
-
-      const stripeWindow = window.open(data.url, '_blank');
-
-      if (!stripeWindow) {
-        setError('Please allow popups for this site to complete payment');
-        setIsLoading(false);
-        return;
-      }
-
-      onClose();
-      setIsLoading(false);
+      resetForm();
+      await fetchProducts();
     } catch (err: any) {
-      console.error('Checkout error:', err);
-      setError(err.message || 'Failed to initialize payment');
-      setIsLoading(false);
+      console.error(err);
+      setMessage(err.message || 'Failed to save product.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (!isOpen) return null;
+  const handleEdit = (product: MerchandiseRow) => {
+    setForm({
+      id: product.id,
+      name: product.name || '',
+      description: product.description || '',
+      category: product.category || '',
+      price: product.price != null ? String(product.price) : '',
+      sizes: product.sizes || '',
+      image_url: product.image_url || '',
+      back_image_url: product.back_image_url || '',
+      active: !!product.active,
+    });
+
+    setEditing(true);
+    setMainImageFile(null);
+    setBackImageFile(null);
+    setMessage('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDelete = async (id: string) => {
+    const confirmed = window.confirm('Delete this product?');
+    if (!confirmed) return;
+
+    const { error } = await supabase.from('merchandise_items').delete().eq('id', id);
+
+    if (error) {
+      console.error('Delete failed:', error);
+      setMessage(`Delete failed: ${error.message}`);
+      return;
+    }
+
+    if (editing && form.id === id) {
+      resetForm();
+    }
+
+    setMessage('Product deleted.');
+    await fetchProducts();
+  };
+
+  const toggleActive = async (product: MerchandiseRow) => {
+    const { error } = await supabase
+      .from('merchandise_items')
+      .update({ active: !product.active })
+      .eq('id', product.id);
+
+    if (error) {
+      console.error('Status update failed:', error);
+      setMessage(`Status update failed: ${error.message}`);
+      return;
+    }
+
+    await fetchProducts();
+  };
 
   return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 p-4"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && allowBackdropClick) {
-          onClose();
-        }
-      }}
-    >
-      <div
-        className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="sticky top-0 flex items-center justify-between rounded-t-2xl border-b border-gray-200 bg-white px-6 py-4">
-          <h2 className="text-2xl font-bold text-gray-900">Secure Checkout</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isLoading}
-            className="rounded-full p-2 transition-colors hover:bg-gray-100"
-            title="Close"
-            aria-label="Close"
-          >
-            <X className="h-6 w-6 text-gray-400" />
-          </button>
+    <div className="p-6 space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">
+          {editing ? 'Edit Product' : 'Add Product'}
+        </h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Add or update front image, back image, price, category, and sizes.
+        </p>
+      </div>
+
+      {message && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            message.toLowerCase().includes('fail') || message.toLowerCase().includes('error')
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : 'border-green-200 bg-green-50 text-green-700'
+          }`}
+        >
+          {message}
         </div>
+      )}
 
-        <div className="p-6">
-          <div className="space-y-6">
-            {items.some((item) => item.type === 'property') && safeDepositAmount > 0 && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700">
-                    $
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="mb-1 text-sm font-semibold text-gray-900">
-                      {safeDepositAmount.toFixed(0)} Security Deposit Authorization (Hold)
-                    </h3>
-                    <p className="text-xs leading-relaxed text-gray-600">
-                      Your cart includes vacation rental(s). A {safeDepositAmount.toFixed(0)} hold
-                      will be placed on your card but NOT charged. The hold will be automatically
-                      released after checkout if there are no damages.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+      <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-5">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Product Name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+              placeholder="Sun Shirt"
+            />
+          </div>
 
-            <div className="space-y-3 rounded-lg bg-gray-50 p-4">
-              <h3 className="mb-3 font-semibold text-gray-900">Order Summary</h3>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Category</label>
+            <input
+              type="text"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+              placeholder="Apparel"
+            />
+          </div>
 
-              {items.map((item) => (
-                <div key={item.id} className="flex justify-between text-sm">
-                  <span className="text-gray-600">
-                    {item.type === 'activity'
-                      ? `${item.activity?.name} - ${item.numPeople} ${
-                          item.numPeople === 1 ? 'person' : 'people'
-                        }`
-                      : item.type === 'property'
-                        ? `${item.property?.name} - ${item.guests} ${
-                            item.guests === 1 ? 'guest' : 'guests'
-                          }`
-                        : `${item.name || 'Merchandise Item'} x ${item.quantity || 1}`}
-                  </span>
-                  <span className="font-medium text-gray-900">
-                    ${(item.price ?? 0).toFixed(2)}
-                  </span>
-                </div>
-              ))}
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Price</label>
+            <input
+              type="number"
+              step="0.01"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+              placeholder="48.00"
+            />
+          </div>
 
-              {(safeDepositAmount > 0 || safeLodgingTax > 0 || safeSalesTax > 0 || promoApplied) && (
-                <>
-                  <div className="flex justify-between border-t border-gray-200 pt-2 text-sm">
-                    <span className="text-gray-700">Subtotal</span>
-                    <span className="font-medium text-gray-900">
-                      ${safeSubtotal.toFixed(2)}
-                    </span>
-                  </div>
-
-                  {promoApplied && promoDiscount > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium text-green-600">
-                        Discount ({promoDiscount}%) - {promoCode}
-                      </span>
-                      <span className="font-medium text-green-600">
-                        -${discountAmount.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-
-                  {(adjustedSalesTax > 0 || safeSalesTax > 0) && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-700">Sales Tax (6.5%)</span>
-                      <span className="font-medium text-gray-900">
-                        ${(promoDiscount > 0 ? adjustedSalesTax : safeSalesTax).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-
-                  {(adjustedLodgingTax > 0 || safeLodgingTax > 0) && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-700">Lodging Tax (11.5%)</span>
-                      <span className="font-medium text-gray-900">
-                        ${(promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-
-                  {safeDepositAmount > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="font-medium text-yellow-700">
-                        Security Deposit (Hold - Not Charged)
-                      </span>
-                      <span className="font-medium text-yellow-700">
-                        ${safeDepositAmount.toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-
-              <div className="flex justify-between border-t-2 border-gray-300 pt-3">
-                <span className="font-semibold text-gray-900">Total</span>
-                <span className="text-xl font-bold text-blue-600">
-                  ${finalTotal.toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="name" className="mb-2 block text-sm font-medium text-gray-700">
-                  Full Name
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-blue-500"
-                  placeholder="John Doe"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="email" className="mb-2 block text-sm font-medium text-gray-700">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-blue-500"
-                  placeholder="john@example.com"
-                  required
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="promo-code"
-                  className="mb-2 block text-sm font-medium text-gray-700"
-                >
-                  Promo Code (Optional)
-                </label>
-
-                {promoApplied ? (
-                  <div className="rounded-lg border border-green-300 bg-green-50 p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Tag className="h-4 w-4 text-green-600" />
-                        <div>
-                          <p className="text-sm font-medium text-green-800">
-                            {promoCode} applied ({promoDiscount}% off)
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleRemovePromoCode}
-                        className="rounded bg-red-500 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-red-600"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-gray-200 p-3">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        id="promo-code"
-                        value={promoCode}
-                        onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                        placeholder="Enter promo code"
-                        className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleApplyPromoCode();
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleApplyPromoCode}
-                        disabled={isValidatingPromo || !promoCode.trim()}
-                        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isValidatingPromo ? 'Checking...' : 'Apply'}
-                      </button>
-                    </div>
-
-                    {promoMessage && (
-                      <p
-                        className={`mt-2 text-xs ${
-                          promoApplied ? 'font-medium text-green-600' : 'text-red-600'
-                        }`}
-                      >
-                        {promoMessage}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {hasJetSki && (
-                <>
-                  <div className="mt-6 rounded-xl bg-gray-900 p-5 text-white">
-                    <h3 className="mb-3 text-lg font-bold">Age & Identification Requirements</h3>
-                    <ul className="space-y-2 text-sm">
-                      <li className="flex items-start gap-2">
-                        <span className="mt-1 text-cyan-400">•</span>
-                        <span>Operators must be at least 14 years old</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="mt-1 text-cyan-400">•</span>
-                        <span>Renters must be at least 18 years old</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="mt-1 text-cyan-400">•</span>
-                        <span>Valid photo ID required</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="mt-1 text-cyan-400">•</span>
-                        <span>Boating safety compliance required before operation</span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-6">
-                    <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-gray-900">
-                      <Info className="h-5 w-5 text-blue-600" />
-                      Jet Ski Operator Requirements
-                    </h3>
-                    <p className="mb-4 text-sm text-gray-700">
-                      Your cart includes a jet ski rental. Florida law requires the following
-                      compliance information.
-                    </p>
-
-                    <div className="space-y-4">
-                      <div>
-                        <label
-                          htmlFor="operator-dob"
-                          className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700"
-                        >
-                          <Calendar className="h-4 w-4 text-cyan-600" />
-                          Operator Date of Birth <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="date"
-                          id="operator-dob"
-                          required={hasJetSki}
-                          value={operatorDob}
-                          onChange={(e) => setOperatorDob(e.target.value)}
-                          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-cyan-500"
-                          max={new Date().toISOString().split('T')[0]}
-                        />
-                        {operatorDob && calculateOperatorAge(operatorDob) < 14 && (
-                          <p className="mt-1 text-sm font-medium text-red-600">
-                            Operator must be at least 14 years old
-                          </p>
-                        )}
-                        {operatorDob && calculateOperatorAge(operatorDob) >= 14 && (
-                          <p className="mt-1 text-sm text-green-600">
-                            Operator age: {calculateOperatorAge(operatorDob)} years
-                          </p>
-                        )}
-                      </div>
-
-                      {operatorDob && new Date(operatorDob) >= new Date('1988-01-01') && (
-                        <>
-                          <div>
-                            <label className="mb-2 block text-sm font-semibold text-gray-700">
-                              Do you currently possess a valid Boating Safety Education Card?{' '}
-                              <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                              required={hasJetSki}
-                              value={boatingCompliance.has_boater_card}
-                              onChange={(e) =>
-                                setBoatingCompliance({
-                                  ...boatingCompliance,
-                                  has_boater_card: e.target.value,
-                                })
-                              }
-                              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-cyan-500"
-                            >
-                              <option value="">Select</option>
-                              <option value="yes">Yes</option>
-                              <option value="no">No</option>
-                            </select>
-                          </div>
-
-                          {boatingCompliance.has_boater_card === 'yes' && (
-                            <div>
-                              <label className="mb-2 block text-sm font-semibold text-gray-700">
-                                Upload Your Boating Safety Card{' '}
-                                <span className="text-red-500">*</span>
-                              </label>
-                              <div className="rounded-lg border-2 border-dashed border-cyan-300 bg-white p-4">
-                                <input
-                                  type="file"
-                                  required={hasJetSki}
-                                  accept=".jpg,.jpeg,.png,.pdf"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                      setBoatingSafetyCardFile(file);
-                                    }
-                                  }}
-                                  className="w-full text-sm text-gray-700"
-                                />
-                                {boatingSafetyCardFile && (
-                                  <p className="mt-2 text-sm font-medium text-green-600">
-                                    ✓ Card uploaded: {boatingSafetyCardFile.name}
-                                  </p>
-                                )}
-                                <p className="mt-2 text-xs text-gray-500">
-                                  Accepted formats: JPG, PNG, PDF
-                                </p>
-                              </div>
-                            </div>
-                          )}
-
-                          {boatingCompliance.has_boater_card === 'no' && (
-                            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                              <p className="mb-3 text-sm font-medium text-red-700">
-                                Florida law requires a Boating Safety Education Card for operators
-                                born on or after January 1, 1988. You must obtain this card before
-                                you can rent a jet ski.
-                              </p>
-                              <div className="space-y-2 text-sm text-red-700">
-                                <p>
-                                  <strong>Option 1:</strong> Get your card now at{' '}
-                                  <a
-                                    href="https://takemyboattest.com/"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="font-semibold underline hover:text-red-900"
-                                  >
-                                    takemyboattest.com
-                                  </a>
-                                </p>
-                                <p>
-                                  <strong>Option 2:</strong> Already have your card?{' '}
-                                  <a
-                                    href="/upload-boating-card"
-                                    className="font-semibold underline hover:text-red-900"
-                                  >
-                                    Upload it here
-                                  </a>
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-                        <label className="flex cursor-pointer items-start gap-3">
-                          <input
-                            type="checkbox"
-                            required={hasJetSki}
-                            checked={boatingCompliance.certification_agreed}
-                            onChange={(e) =>
-                              setBoatingCompliance({
-                                ...boatingCompliance,
-                                certification_agreed: e.target.checked,
-                              })
-                            }
-                            className="mt-1 h-4 w-4 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                          />
-                          <span className="text-sm text-gray-700">
-                            I certify that the information provided is true and accurate. I
-                            understand that Florida law requires boating safety education to operate
-                            a personal watercraft.
-                          </span>
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border-2 border-yellow-200 bg-yellow-50 p-6">
-                    <h4 className="mb-4 flex items-center gap-2 font-bold text-gray-900">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                      Required Acknowledgments
-                    </h4>
-                    <div className="space-y-3">
-                      <label className="flex cursor-pointer items-start gap-3">
-                        <input
-                          type="checkbox"
-                          required={hasJetSki}
-                          checked={acknowledgments.operator_age}
-                          onChange={(e) =>
-                            setAcknowledgments({
-                              ...acknowledgments,
-                              operator_age: e.target.checked,
-                            })
-                          }
-                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          I confirm the operator is 14 years or older.
-                        </span>
-                      </label>
-                      <label className="flex cursor-pointer items-start gap-3">
-                        <input
-                          type="checkbox"
-                          required={hasJetSki}
-                          checked={acknowledgments.passenger_age}
-                          onChange={(e) =>
-                            setAcknowledgments({
-                              ...acknowledgments,
-                              passenger_age: e.target.checked,
-                            })
-                          }
-                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          I confirm any passenger is at least 6 years old, fits properly in a
-                          USCG-approved life jacket, and can hold on independently.
-                        </span>
-                      </label>
-                      <label className="flex cursor-pointer items-start gap-3">
-                        <input
-                          type="checkbox"
-                          required={hasJetSki}
-                          checked={acknowledgments.backwater_only}
-                          onChange={(e) =>
-                            setAcknowledgments({
-                              ...acknowledgments,
-                              backwater_only: e.target.checked,
-                            })
-                          }
-                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          I understand this rental is backwater only and not for open Gulf use.
-                        </span>
-                      </label>
-                      <label className="flex cursor-pointer items-start gap-3">
-                        <input
-                          type="checkbox"
-                          required={hasJetSki}
-                          checked={acknowledgments.life_jackets}
-                          onChange={(e) =>
-                            setAcknowledgments({
-                              ...acknowledgments,
-                              life_jackets: e.target.checked,
-                            })
-                          }
-                          className="mt-1 h-5 w-5 rounded border-gray-300 text-cyan-600 focus:ring-cyan-500"
-                        />
-                        <span className="text-sm text-gray-700">
-                          I understand life jackets are required and provided, and must be worn at
-                          all times.
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                  <p className="text-sm text-red-600">{error}</p>
-                </div>
-              )}
-
-              {items.some((item) => item.type === 'property') && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
-                  <p className="mb-2 font-semibold text-gray-800">Rental Terms & Conditions:</p>
-                  <p className="leading-relaxed">
-                    By completing this booking, you agree to our rental policies including
-                    check-in/check-out times, property rules, and security deposit terms. A $500
-                    authorization hold will be placed on your card but will not be charged unless
-                    damages occur.
-                  </p>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={(e) => handleCheckout(e)}
-                onMouseDown={(e) => e.stopPropagation()}
-                disabled={isLoading || uploadingCard || !customerEmail || !customerName}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4 font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-700 hover:to-cyan-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {uploadingCard ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Uploading Document...
-                  </>
-                ) : isLoading ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                    Redirecting to secure checkout...
-                  </>
-                ) : (
-                  'Proceed to Secure Checkout'
-                )}
-              </button>
-
-              <p className="text-center text-xs text-gray-500">
-                You will be redirected to Stripe&apos;s secure payment page
-              </p>
-            </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Sizes (comma separated)
+            </label>
+            <input
+              type="text"
+              value={form.sizes}
+              onChange={(e) => setForm({ ...form, sizes: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+              placeholder="S,M,L,XL,XXL"
+            />
           </div>
         </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-gray-700">Description</label>
+          <textarea
+            rows={4}
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            className="w-full rounded-lg border border-gray-300 px-4 py-2"
+            placeholder="Lightweight long-sleeve sun shirt..."
+          />
+        </div>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700">Front Image</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              onChange={(e) => setMainImageFile(e.target.files?.[0] || null)}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+            />
+            {mainImageFile && (
+              <p className="text-sm text-gray-600">New front image: {mainImageFile.name}</p>
+            )}
+            {form.image_url ? (
+              <div>
+                <p className="mb-2 text-xs font-medium text-gray-500">Current front image</p>
+                <img
+                  src={form.image_url}
+                  alt="Front"
+                  className="h-48 w-full rounded-lg border object-cover"
+                />
+              </div>
+            ) : (
+              <div className="h-48 w-full rounded-lg border bg-gray-50 flex items-center justify-center text-sm text-gray-500">
+                No front image selected
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-gray-700">Back Image</label>
+            <input
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              onChange={(e) => setBackImageFile(e.target.files?.[0] || null)}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+            />
+            {backImageFile && (
+              <p className="text-sm text-gray-600">New back image: {backImageFile.name}</p>
+            )}
+            {form.back_image_url ? (
+              <div>
+                <p className="mb-2 text-xs font-medium text-gray-500">Current back image</p>
+                <img
+                  src={form.back_image_url}
+                  alt="Back"
+                  className="h-48 w-full rounded-lg border object-cover"
+                />
+              </div>
+            ) : (
+              <div className="h-48 w-full rounded-lg border bg-gray-50 flex items-center justify-center text-sm text-gray-500">
+                No back image selected
+              </div>
+            )}
+          </div>
+        </div>
+
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={form.active}
+            onChange={(e) => setForm({ ...form, active: e.target.checked })}
+          />
+          <span className="text-sm text-gray-700">Active product</span>
+        </label>
+
+        <div className="flex flex-wrap gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-lg bg-blue-600 px-5 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : editing ? 'Update Product' : 'Save Product'}
+          </button>
+
+          <button
+            type="button"
+            onClick={resetForm}
+            disabled={saving}
+            className="rounded-lg bg-gray-200 px-5 py-2 font-medium text-gray-800 hover:bg-gray-300"
+          >
+            {editing ? 'Cancel Edit' : 'Clear'}
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-6">
+        <h3 className="mb-4 text-lg font-semibold text-gray-900">Existing Products</h3>
+
+        {loading ? (
+          <div className="text-sm text-gray-600">Loading products...</div>
+        ) : products.length === 0 ? (
+          <div className="text-sm text-gray-600">No products found.</div>
+        ) : (
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {products.map((product) => (
+              <div key={product.id} className="rounded-xl border border-gray-200 p-4 space-y-3">
+                <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
+                  {product.image_url ? (
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">
+                      No front image
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="font-semibold text-gray-900">
+                    {product.name || 'Unnamed product'}
+                  </h4>
+                  <p className="text-sm text-gray-500">{product.category || 'No category'}</p>
+                </div>
+
+                <div className="text-sm text-gray-700 space-y-1">
+                  <div>Price: ${(product.price ?? 0).toFixed(2)}</div>
+                  <div>Status: {product.active ? 'Active' : 'Inactive'}</div>
+                  <div>Sizes: {product.sizes || 'None'}</div>
+                  <div>Back Image: {product.back_image_url ? 'Yes' : 'No'}</div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleEdit(product)}
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleActive(product)}
+                    className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600"
+                  >
+                    {product.active ? 'Deactivate' : 'Activate'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(product.id)}
+                    className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
