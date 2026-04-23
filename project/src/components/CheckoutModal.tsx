@@ -131,7 +131,9 @@ export default function CheckoutModal({
       const result = data[0];
 
       if (result.is_valid) {
-        const nextDiscount = Number(result.discount_percentage) || 0;
+      console.log('PROMO RESULT:', result);
+        const nextDiscount =
+  Number(result.discount_percent ?? result.discount_percentage ?? result.discount_value) || 0;
 
         setPromoCode(codeToUse);
         setPromoApplied(true);
