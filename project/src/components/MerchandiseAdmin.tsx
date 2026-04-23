@@ -11,7 +11,7 @@ type MerchandiseRow = {
  
  
   image_url: string | null;
-  stock_quantity: number | null;
+ 
   active: boolean | null;
   created_at?: string | null;
 };
@@ -21,7 +21,7 @@ const emptyForm = {
   description: '',
   category: '',
   price: '',
-  stock_quantity: '',
+  
   
   active: true,
 };
@@ -95,16 +95,14 @@ export default function MerchandiseAdmin() {
     try {
       const imageUrl = await handleMainImageUpload();
 
-    const payload = {
+const payload = {
   name: form.name.trim(),
   description: form.description.trim() || null,
   category: form.category.trim() || null,
   price: Number(form.price),
-  stock_quantity: form.stock_quantity.trim() ? Number(form.stock_quantity) : 0,
   image_url: imageUrl,
   active: form.active,
 };
-
       const { error } = await supabase.from('merchandise_items').insert([payload]);
 
       if (error) {
@@ -353,7 +351,7 @@ export default function MerchandiseAdmin() {
 
                 <div className="text-sm text-gray-700">
                   <div>Price: ${(product.price ?? 0).toFixed(2)}</div>
-                  <div>Stock: {product.stock_quantity ?? 0}</div>
+                  
                   <div>Status: {product.active ? 'Active' : 'Inactive'}</div>
                   
                   
