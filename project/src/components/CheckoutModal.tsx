@@ -1,455 +1,340 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { X, Loader2, Tag } from 'lucide-react';
+import type { CartItem } from '../lib/cart-context';
 import { supabase } from '../lib/supabase';
-import { uploadImage } from '../lib/storage';
 
-type MerchandiseRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number | null;
-  category: string | null;
-  image_url: string | null;
-  back_image_url: string | null;
-  sizes: string | null;
-  active: boolean | null;
-  created_at?: string | null;
-};
+interface CheckoutModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  items: CartItem[];
+  totalAmount: number;
+  subtotal: number;
+  lodgingTax: number;
+  salesTax: number;
+  depositAmount: number;
+  promoCode?: string;
+  promoDiscount?: number;
+  onSuccess: () => void;
+  onPromoChange?: (code: string, discount: number) => void;
+}
 
-type MerchandiseForm = {
-  id: string;
-  name: string;
-  description: string;
-  category: string;
-  price: string;
-  sizes: string;
-  image_url: string;
-  back_image_url: string;
-  active: boolean;
-};
+export default function CheckoutModal({
+  isOpen,
+  onClose,
+  items,
+  totalAmount,
+  subtotal,
+  lodgingTax,
+  salesTax,
+  depositAmount,
+  promoCode: initialPromoCode = '',
+  promoDiscount: initialPromoDiscount = 0,
+  onPromoChange,
+}: CheckoutModalProps) {
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [promoCode, setPromoCode] = useState(initialPromoCode);
+  const [promoDiscount, setPromoDiscount] = useState(initialPromoDiscount);
+  const [promoApplied, setPromoApplied] = useState(initialPromoDiscount > 0);
+  const [promoMessage, setPromoMessage] = useState('');
+  const [isValidatingPromo, setIsValidatingPromo] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-const emptyForm: MerchandiseForm = {
-  id: '',
-  name: '',
-  description: '',
-  category: '',
-  price: '',
-  sizes: '',
-  image_url: '',
-  back_image_url: '',
-  active: true,
-};
+  if (!isOpen) return null;
 
-export default function MerchandiseAdmin() {
-  const [products, setProducts] = useState<MerchandiseRow[]>([]);
-  const [form, setForm] = useState<MerchandiseForm>(emptyForm);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState('');
+  const hasProperties = items.some((item) => item.type === 'property');
+  const hasMerchandise = items.some((item) => item.type === 'merchandise');
 
-  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
-  const [backImageFile, setBackImageFile] = useState<File | null>(null);
-
-  const fetchProducts = async () => {
-    setLoading(true);
-    setMessage('');
-
-    const { data, error } = await supabase
-      .from('merchandise_items')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error loading merchandise items:', error);
-      setProducts([]);
-      setMessage(`Error loading merchandise items: ${error.message}`);
-      setLoading(false);
-      return;
-    }
-
-    setProducts((data as MerchandiseRow[]) || []);
-    setLoading(false);
+  const getOrderType = () => {
+    if (hasProperties) return 'properties';
+    if (hasMerchandise) return 'merch';
+    return 'activities';
   };
 
-  useEffect(() => {
-    fetchProducts();
-  }, []);
+  const safeSubtotal = subtotal || 0;
+  const safeLodgingTax = lodgingTax || 0;
+  const safeSalesTax = salesTax || 0;
+  const safeDepositAmount = depositAmount || 0;
 
-  const resetForm = () => {
-    setForm(emptyForm);
-    setEditing(false);
-    setMainImageFile(null);
-    setBackImageFile(null);
-    setMessage('');
-  };
+  const discountAmount = (safeSubtotal * promoDiscount) / 100;
+  const discountedSubtotal = safeSubtotal - discountAmount;
 
-  const upload = async (file: File | null) => {
-    if (!file) return null;
+  const adjustedSalesTax =
+    promoDiscount > 0 ? discountedSubtotal * 0.065 : safeSalesTax;
 
-    const result = await uploadImage(file, 'merchandise');
+  const adjustedLodgingTax =
+    promoDiscount > 0 && hasProperties ? discountedSubtotal * 0.115 : safeLodgingTax;
 
-    if (!result || result.error || !result.url) {
-      throw new Error(result?.error || 'Image upload failed');
-    }
+  const finalTotal =
+    promoDiscount > 0
+      ? discountedSubtotal + adjustedSalesTax + adjustedLodgingTax
+      : totalAmount;
 
-    return result.url;
-  };
+  async function handleApplyPromoCode() {
+    const codeToUse = promoCode.trim().toUpperCase();
 
-  const handleSave = async () => {
-    setMessage('');
-
-    if (!form.name.trim()) {
-      setMessage('Product name is required.');
+    if (!codeToUse) {
+      setPromoMessage('Enter a promo code');
       return;
     }
 
-    if (!form.price.trim() || Number.isNaN(Number(form.price))) {
-      setMessage('Valid price is required.');
-      return;
-    }
-
-    if (!editing && !mainImageFile && !form.image_url) {
-      setMessage('Front image is required for a new product.');
-      return;
-    }
-
-    setSaving(true);
+    setIsValidatingPromo(true);
+    setPromoMessage('');
 
     try {
-      const front = await upload(mainImageFile);
-      const back = await upload(backImageFile);
+      const { data, error } = await supabase.rpc('validate_promo_code_v2', {
+        p_code: codeToUse,
+        p_order_type: getOrderType(),
+        p_subtotal: safeSubtotal,
+      });
 
-      const payload = {
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        category: form.category.trim() || null,
-        price: Number(form.price),
-        sizes: form.sizes.trim() || null,
-        image_url: front || form.image_url || null,
-        back_image_url: back || form.back_image_url || null,
-        active: form.active,
-      };
+      if (error) throw error;
 
-      if (editing) {
-        const { error } = await supabase
-          .from('merchandise_items')
-          .update(payload)
-          .eq('id', form.id);
-
-        if (error) throw error;
-
-        setMessage('Product updated successfully.');
-      } else {
-        const { error } = await supabase.from('merchandise_items').insert([payload]);
-
-        if (error) throw error;
-
-        setMessage('Product saved successfully.');
+      if (!data?.valid) {
+        setPromoApplied(false);
+        setPromoDiscount(0);
+        setPromoMessage(data?.message || 'Invalid promo code');
+        onPromoChange?.('', 0);
+        return;
       }
 
-      resetForm();
-      await fetchProducts();
+      const nextDiscount =
+        Number(
+          data.discount_percent ??
+            data.discount_percentage ??
+            data.discount_value ??
+            0
+        ) || 0;
+
+      setPromoCode(data.code || codeToUse);
+      setPromoDiscount(nextDiscount);
+      setPromoApplied(true);
+      setPromoMessage(`Promo applied: ${nextDiscount}% off`);
+      onPromoChange?.(data.code || codeToUse, nextDiscount);
     } catch (err: any) {
-      console.error(err);
-      setMessage(err.message || 'Failed to save product.');
+      console.error('Promo error:', err);
+      setPromoApplied(false);
+      setPromoDiscount(0);
+      setPromoMessage('Error applying promo code');
     } finally {
-      setSaving(false);
+      setIsValidatingPromo(false);
     }
-  };
+  }
 
-  const handleEdit = (product: MerchandiseRow) => {
-    setForm({
-      id: product.id,
-      name: product.name || '',
-      description: product.description || '',
-      category: product.category || '',
-      price: product.price != null ? String(product.price) : '',
-      sizes: product.sizes || '',
-      image_url: product.image_url || '',
-      back_image_url: product.back_image_url || '',
-      active: !!product.active,
-    });
+  function handleRemovePromoCode() {
+    setPromoCode('');
+    setPromoDiscount(0);
+    setPromoApplied(false);
+    setPromoMessage('');
+    onPromoChange?.('', 0);
+  }
 
-    setEditing(true);
-    setMainImageFile(null);
-    setBackImageFile(null);
-    setMessage('');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  async function handleCheckout() {
+    setError('');
 
-  const handleDelete = async (id: string) => {
-    const confirmed = window.confirm('Delete this product?');
-    if (!confirmed) return;
-
-    const { error } = await supabase.from('merchandise_items').delete().eq('id', id);
-
-    if (error) {
-      console.error('Delete failed:', error);
-      setMessage(`Delete failed: ${error.message}`);
+    if (!customerName.trim() || !customerEmail.trim()) {
+      setError('Please enter your name and email.');
       return;
     }
 
-    if (editing && form.id === id) {
-      resetForm();
+    setIsLoading(true);
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`;
+
+      const paymentData = {
+        items,
+        customerName,
+        customerEmail,
+        subtotal: safeSubtotal,
+        lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax,
+        salesTax: promoDiscount > 0 ? adjustedSalesTax : safeSalesTax,
+        totalPrice: finalTotal,
+        promoCode: promoApplied ? promoCode : undefined,
+        promoDiscount: promoApplied ? promoDiscount : undefined,
+      };
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(paymentData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create checkout session');
+      }
+
+      const data = await response.json();
+
+      if (!data.url) {
+        throw new Error('No checkout URL received');
+      }
+
+      window.location.href = data.url;
+    } catch (err: any) {
+      console.error('Checkout error:', err);
+      setError(err.message || 'Checkout failed');
+      setIsLoading(false);
     }
-
-    setMessage('Product deleted.');
-    await fetchProducts();
-  };
-
-  const toggleActive = async (product: MerchandiseRow) => {
-    const { error } = await supabase
-      .from('merchandise_items')
-      .update({ active: !product.active })
-      .eq('id', product.id);
-
-    if (error) {
-      console.error('Status update failed:', error);
-      setMessage(`Status update failed: ${error.message}`);
-      return;
-    }
-
-    await fetchProducts();
-  };
+  }
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">
-          {editing ? 'Edit Product' : 'Add Product'}
-        </h2>
-        <p className="mt-1 text-sm text-gray-600">
-          Add or update front image, back image, price, category, and sizes.
-        </p>
-      </div>
-
-      {message && (
-        <div
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            message.toLowerCase().includes('fail') || message.toLowerCase().includes('error')
-              ? 'border-red-200 bg-red-50 text-red-700'
-              : 'border-green-200 bg-green-50 text-green-700'
-          }`}
-        >
-          {message}
-        </div>
-      )}
-
-      <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-5">
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Product Name</label>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-              placeholder="Sun Shirt"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Category</label>
-            <input
-              type="text"
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-              placeholder="Apparel"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Price</label>
-            <input
-              type="number"
-              step="0.01"
-              value={form.price}
-              onChange={(e) => setForm({ ...form, price: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-              placeholder="48.00"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">
-              Sizes (comma separated)
-            </label>
-            <input
-              type="text"
-              value={form.sizes}
-              onChange={(e) => setForm({ ...form, sizes: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-              placeholder="S,M,L,XL,XXL"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-medium text-gray-700">Description</label>
-          <textarea
-            rows={4}
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            className="w-full rounded-lg border border-gray-300 px-4 py-2"
-            placeholder="Lightweight long-sleeve sun shirt..."
-          />
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">Front Image</label>
-            <input
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              onChange={(e) => setMainImageFile(e.target.files?.[0] || null)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-            />
-            {mainImageFile && (
-              <p className="text-sm text-gray-600">New front image: {mainImageFile.name}</p>
-            )}
-            {form.image_url ? (
-              <div>
-                <p className="mb-2 text-xs font-medium text-gray-500">Current front image</p>
-                <img
-                  src={form.image_url}
-                  alt="Front"
-                  className="h-48 w-full rounded-lg border object-cover"
-                />
-              </div>
-            ) : (
-              <div className="h-48 w-full rounded-lg border bg-gray-50 flex items-center justify-center text-sm text-gray-500">
-                No front image selected
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">Back Image</label>
-            <input
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              onChange={(e) => setBackImageFile(e.target.files?.[0] || null)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-            />
-            {backImageFile && (
-              <p className="text-sm text-gray-600">New back image: {backImageFile.name}</p>
-            )}
-            {form.back_image_url ? (
-              <div>
-                <p className="mb-2 text-xs font-medium text-gray-500">Current back image</p>
-                <img
-                  src={form.back_image_url}
-                  alt="Back"
-                  className="h-48 w-full rounded-lg border object-cover"
-                />
-              </div>
-            ) : (
-              <div className="h-48 w-full rounded-lg border bg-gray-50 flex items-center justify-center text-sm text-gray-500">
-                No back image selected
-              </div>
-            )}
-          </div>
-        </div>
-
-        <label className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            checked={form.active}
-            onChange={(e) => setForm({ ...form, active: e.target.checked })}
-          />
-          <span className="text-sm text-gray-700">Active product</span>
-        </label>
-
-        <div className="flex flex-wrap gap-3 pt-2">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-lg bg-blue-600 px-5 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : editing ? 'Update Product' : 'Save Product'}
-          </button>
-
-          <button
-            type="button"
-            onClick={resetForm}
-            disabled={saving}
-            className="rounded-lg bg-gray-200 px-5 py-2 font-medium text-gray-800 hover:bg-gray-300"
-          >
-            {editing ? 'Cancel Edit' : 'Clear'}
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+        <div className="sticky top-0 flex items-center justify-between border-b bg-white px-6 py-4">
+          <h2 className="text-2xl font-bold text-gray-900">Secure Checkout</h2>
+          <button type="button" onClick={onClose} className="rounded-full p-2 hover:bg-gray-100">
+            <X className="h-6 w-6 text-gray-500" />
           </button>
         </div>
-      </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="mb-4 text-lg font-semibold text-gray-900">Existing Products</h3>
+        <div className="space-y-6 p-6">
+          <div className="rounded-lg bg-gray-50 p-4 space-y-3">
+            <h3 className="font-semibold text-gray-900">Order Summary</h3>
 
-        {loading ? (
-          <div className="text-sm text-gray-600">Loading products...</div>
-        ) : products.length === 0 ? (
-          <div className="text-sm text-gray-600">No products found.</div>
-        ) : (
-          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {products.map((product) => (
-              <div key={product.id} className="rounded-xl border border-gray-200 p-4 space-y-3">
-                <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
-                  {product.image_url ? (
-                    <img
-                      src={product.image_url}
-                      alt={product.name}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-sm text-gray-500">
-                      No front image
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <h4 className="font-semibold text-gray-900">
-                    {product.name || 'Unnamed product'}
-                  </h4>
-                  <p className="text-sm text-gray-500">{product.category || 'No category'}</p>
-                </div>
-
-                <div className="text-sm text-gray-700 space-y-1">
-                  <div>Price: ${(product.price ?? 0).toFixed(2)}</div>
-                  <div>Status: {product.active ? 'Active' : 'Inactive'}</div>
-                  <div>Sizes: {product.sizes || 'None'}</div>
-                  <div>Back Image: {product.back_image_url ? 'Yes' : 'No'}</div>
-                </div>
-
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => handleEdit(product)}
-                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                  >
-                    Edit
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleActive(product)}
-                    className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-white hover:bg-amber-600"
-                  >
-                    {product.active ? 'Deactivate' : 'Activate'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(product.id)}
-                    className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
+            {items.map((item) => (
+              <div key={item.id} className="flex justify-between text-sm">
+                <span className="text-gray-600">
+                  {item.type === 'activity'
+                    ? `${item.activity?.name || 'Activity'} - ${item.numPeople || 1} people`
+                    : item.type === 'property'
+                      ? `${item.property?.name || 'Property'} - ${item.guests || 1} guests`
+                      : `${item.name || 'Merchandise'} x ${item.quantity || 1}`}
+                </span>
+                <span className="font-medium">${(item.price || 0).toFixed(2)}</span>
               </div>
             ))}
+
+            <div className="border-t pt-2 flex justify-between text-sm">
+              <span>Subtotal</span>
+              <span>${safeSubtotal.toFixed(2)}</span>
+            </div>
+
+            {promoApplied && promoDiscount > 0 && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>Discount ({promoDiscount}%) - {promoCode}</span>
+                <span>-${discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            {safeSalesTax > 0 && (
+              <div className="flex justify-between text-sm">
+                <span>Sales Tax</span>
+                <span>${(promoDiscount > 0 ? adjustedSalesTax : safeSalesTax).toFixed(2)}</span>
+              </div>
+            )}
+
+            {safeLodgingTax > 0 && (
+              <div className="flex justify-between text-sm">
+                <span>Lodging Tax</span>
+                <span>${(promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax).toFixed(2)}</span>
+              </div>
+            )}
+
+            {safeDepositAmount > 0 && (
+              <div className="flex justify-between text-sm text-yellow-700">
+                <span>Security Deposit Hold</span>
+                <span>${safeDepositAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="border-t-2 pt-3 flex justify-between">
+              <span className="font-semibold">Total</span>
+              <span className="text-xl font-bold text-blue-600">${finalTotal.toFixed(2)}</span>
+            </div>
           </div>
-        )}
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Full Name</label>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full rounded-lg border px-4 py-3"
+              placeholder="John Doe"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Email Address</label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              className="w-full rounded-lg border px-4 py-3"
+              placeholder="john@example.com"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Promo Code</label>
+
+            {promoApplied ? (
+              <div className="flex items-center justify-between rounded-lg border border-green-300 bg-green-50 p-3">
+                <div className="flex items-center gap-2 text-green-700">
+                  <Tag className="h-4 w-4" />
+                  <span>{promoCode} applied ({promoDiscount}% off)</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemovePromoCode}
+                  className="rounded bg-red-500 px-3 py-1 text-xs text-white"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={promoCode}
+                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                  className="flex-1 rounded-lg border px-3 py-2"
+                  placeholder="TKAC20"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyPromoCode}
+                  disabled={isValidatingPromo}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+                >
+                  {isValidatingPromo ? 'Checking...' : 'Apply'}
+                </button>
+              </div>
+            )}
+
+            {promoMessage && (
+              <p className={`mt-2 text-sm ${promoApplied ? 'text-green-600' : 'text-red-600'}`}>
+                {promoMessage}
+              </p>
+            )}
+          </div>
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleCheckout}
+            disabled={isLoading}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4 font-semibold text-white disabled:opacity-50"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Redirecting to checkout...
+              </>
+            ) : (
+              'Proceed to Secure Checkout'
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
