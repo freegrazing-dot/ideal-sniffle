@@ -4,10 +4,8 @@ import { MerchandiseItem } from '../types';
 
 type ModalMerchandiseItem = MerchandiseItem & {
   sizes?: string[] | string | null;
-  colors?: string[] | null;
   gallery_images?: string[] | null;
   back_image_url?: string | null;
-  stock_quantity?: number | null;
 };
 
 interface MerchandiseModalProps {
@@ -32,54 +30,46 @@ export default function AdminMerchModal({
 }: MerchandiseModalProps) {
   const [selectedItem, setSelectedItem] = useState<ModalMerchandiseItem | null>(null);
   const [selectedSize, setSelectedSize] = useState('');
-  const [selectedColor, setSelectedColor] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isAdding, setIsAdding] = useState(false);
 
   if (!isOpen) return null;
 
-  const isApparelItem = (item: ModalMerchandiseItem) =>
-    (item.category || '').toLowerCase().includes('apparel') ||
-    item.name.toLowerCase().includes('shirt');
+  const isHatItem = (item: ModalMerchandiseItem) => {
+    const name = (item.name || '').toLowerCase();
+    const category = (item.category || '').toLowerCase();
+    return name.includes('hat') || category.includes('hat');
+  };
 
- const getAvailableSizes = (item: ModalMerchandiseItem) => {
-  const name = (item.name || '').toLowerCase();
-  const category = (item.category || '').toLowerCase();
+  const isApparelItem = (item: ModalMerchandiseItem) => {
+    const name = (item.name || '').toLowerCase();
+    const category = (item.category || '').toLowerCase();
+    return category.includes('apparel') || name.includes('shirt');
+  };
 
-  if (name.includes('hat') || category.includes('hat')) {
-    return [];
-  }
+  const getAvailableSizes = (item: ModalMerchandiseItem) => {
+    if (isHatItem(item)) return [];
 
-  if (Array.isArray(item.sizes) && item.sizes.length > 0) {
-    return item.sizes;
-  }
-
-  if (typeof item.sizes === 'string' && item.sizes.trim()) {
-    return item.sizes.split(',').map((s) => s.trim()).filter(Boolean);
-  }
-
-  if (isApparelItem(item)) {
-    return DEFAULT_APPAREL_SIZES;
-  }
-
-  return [];
-};
-
-  const getAvailableColors = (item: ModalMerchandiseItem) => {
-    if (Array.isArray(item.colors) && item.colors.length > 0) {
-      return item.colors;
+    if (Array.isArray(item.sizes) && item.sizes.length > 0) {
+      return item.sizes;
     }
+
+    if (typeof item.sizes === 'string' && item.sizes.trim()) {
+      return item.sizes.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+
+    if (isApparelItem(item)) {
+      return DEFAULT_APPAREL_SIZES;
+    }
+
     return [];
   };
 
   const handleSelectItem = (item: ModalMerchandiseItem) => {
     const sizes = getAvailableSizes(item);
-    const colors = getAvailableColors(item);
-
     setSelectedItem(item);
     setSelectedSize(sizes[0] || '');
-    setSelectedColor(colors[0] || '');
     setQuantity(1);
     setCurrentImageIndex(0);
   };
@@ -87,7 +77,6 @@ export default function AdminMerchModal({
   const handleBackToAll = () => {
     setSelectedItem(null);
     setSelectedSize('');
-    setSelectedColor('');
     setQuantity(1);
     setCurrentImageIndex(0);
   };
@@ -96,18 +85,15 @@ export default function AdminMerchModal({
     if (!selectedItem) return;
 
     const sizes = getAvailableSizes(selectedItem);
-    const colors = getAvailableColors(selectedItem);
-
     if (sizes.length > 0 && !selectedSize) {
       alert('Please select a size');
       return;
     }
 
-    const colorToUse = colors.length > 0 ? selectedColor : '';
-
     try {
       setIsAdding(true);
-      await onAddToCart(selectedItem, selectedSize, colorToUse, quantity);
+
+      await onAddToCart(selectedItem, selectedSize, '', quantity);
 
       handleBackToAll();
       onClose();
@@ -288,7 +274,7 @@ export default function AdminMerchModal({
                     </div>
 
                     <div className="space-y-4">
-                      {getAvailableSizes(selectedItem).length > 0 && (
+                      {getAvailableSizes(selectedItem).length > 0 ? (
                         <div>
                           <label className="mb-2 block text-sm font-medium text-gray-700">
                             Size
@@ -305,26 +291,11 @@ export default function AdminMerchModal({
                             ))}
                           </select>
                         </div>
-                      )}
-
-                      {getAvailableColors(selectedItem).length > 0 && (
-                        <div>
-                          <label className="mb-2 block text-sm font-medium text-gray-700">
-                            Color
-                          </label>
-                          <select
-                            value={selectedColor}
-                            onChange={(e) => setSelectedColor(e.target.value)}
-                            className="w-full rounded-lg border border-teal-300 bg-white px-4 py-3 text-lg focus:border-transparent focus:ring-2 focus:ring-teal-500"
-                          >
-                            {getAvailableColors(selectedItem).map((color) => (
-                              <option key={color} value={color}>
-                                {color}
-                              </option>
-                            ))}
-                          </select>
+                      ) : isHatItem(selectedItem) ? (
+                        <div className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                          One size fits all
                         </div>
-                      )}
+                      ) : null}
 
                       <div>
                         <label className="mb-2 block text-sm font-medium text-gray-700">
