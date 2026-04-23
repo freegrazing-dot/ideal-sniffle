@@ -33,7 +33,7 @@ export default function CheckoutModal({
 }: CheckoutModalProps) {
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
-  const [promoCode, setPromoCode] = useState(initialPromoCode);
+  const [promoCode, setPromoCode] = useState('');
   const [promoDiscount, setPromoDiscount] = useState(initialPromoDiscount);
   const [promoApplied, setPromoApplied] = useState(initialPromoDiscount > 0);
   const [promoMessage, setPromoMessage] = useState('');
