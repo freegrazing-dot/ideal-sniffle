@@ -96,21 +96,18 @@ export default function MerchandiseAdmin() {
     try {
       const imageUrl = await handleMainImageUpload();
 
-      const payload = {
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        category: form.category.trim() || null,
-        price: Number(form.price),
-        stock_quantity: form.stock_quantity.trim() ? Number(form.stock_quantity) : 0,
-        sizes: form.sizes.trim()
-          ? form.sizes.split(',').map((s) => s.trim()).filter(Boolean)
-          : [],
-        colors: form.colors.trim()
-          ? form.colors.split(',').map((s) => s.trim()).filter(Boolean)
-          : [],
-        image_url: imageUrl,
-        active: form.active,
-      };
+     const payload = {
+  name: form.name.trim(),
+  description: form.description.trim() || null,
+  category: form.category.trim() || null,
+  price: Number(form.price),
+  stock_quantity: form.stock_quantity.trim() ? Number(form.stock_quantity) : 0,
+  sizes: form.sizes.trim()
+    ? form.sizes.split(',').map((s) => s.trim()).filter(Boolean)
+    : [],
+  image_url: imageUrl,
+  active: form.active,
+};
 
       const { error } = await supabase.from('merchandise_items').insert([payload]);
 
@@ -363,7 +360,7 @@ export default function MerchandiseAdmin() {
                   <div>Stock: {product.stock_quantity ?? 0}</div>
                   <div>Status: {product.active ? 'Active' : 'Inactive'}</div>
                   <div>Sizes: {product.sizes?.join(', ') || 'None'}</div>
-                  <div>Colors: {product.colors?.join(', ') || 'None'}</div>
+                  
                 </div>
 
                 <div className="flex gap-2">
