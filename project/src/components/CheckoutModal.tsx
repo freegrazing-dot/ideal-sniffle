@@ -43,9 +43,13 @@ export default function CheckoutModal({
 
   if (!isOpen) return null;
 
+// same imports and code you already have above...
+
   const hasProperties = items.some((item) => item.type === 'property');
   const hasMerchandise = items.some((item) => item.type === 'merchandise');
 
+  const isDepositOnly =
+    items.length > 0 && items.every((item) => item.type === 'security_deposit');
   const getOrderType = () => {
     if (hasProperties) return 'properties';
     if (hasMerchandise) return 'merch';
@@ -259,8 +263,7 @@ export default function CheckoutModal({
             />
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-medium">Email Address</label>
+               <label className="mb-2 block text-sm font-medium">Email Address</label>
             <input
               type="email"
               value={customerEmail}
@@ -271,48 +274,51 @@ export default function CheckoutModal({
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Promo Code</label>
+            
+          {!isDepositOnly && (
+            <div>
+              <label className="mb-2 block text-sm font-medium">Promo Code</label>
 
-            {promoApplied ? (
-              <div className="flex items-center justify-between rounded-lg border border-green-300 bg-green-50 p-3">
-                <div className="flex items-center gap-2 text-green-700">
-                  <Tag className="h-4 w-4" />
-                  <span>{promoCode} applied ({promoDiscount}% off)</span>
+              {promoApplied ? (
+                <div className="flex items-center justify-between rounded-lg border border-green-300 bg-green-50 p-3">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <Tag className="h-4 w-4" />
+                    <span>{promoCode} applied ({promoDiscount}% off)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemovePromoCode}
+                    className="rounded bg-red-500 px-3 py-1 text-xs text-white"
+                  >
+                    Remove
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleRemovePromoCode}
-                  className="rounded bg-red-500 px-3 py-1 text-xs text-white"
-                >
-                  Remove
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                  className="flex-1 rounded-lg border px-3 py-2"
-                  placeholder="Enter promo code"
-                />
-                <button
-                  type="button"
-                  onClick={handleApplyPromoCode}
-                  disabled={isValidatingPromo}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-                >
-                  {isValidatingPromo ? 'Checking...' : 'Apply'}
-                </button>
-              </div>
-            )}
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    className="flex-1 rounded-lg border px-3 py-2"
+                    placeholder="Enter promo code"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyPromoCode}
+                    disabled={isValidatingPromo}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+                  >
+                    {isValidatingPromo ? 'Checking...' : 'Apply'}
+                  </button>
+                </div>
+              )}
 
-            {promoMessage && (
-              <p className={`mt-2 text-sm ${promoApplied ? 'text-green-600' : 'text-red-600'}`}>
-                {promoMessage}
-              </p>
-            )}
-          </div>
-
+              {promoMessage && (
+                <p className={`mt-2 text-sm ${promoApplied ? 'text-green-600' : 'text-red-600'}`}>
+                  {promoMessage}
+                </p>
+              )}
+            </div>
+          )}
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
               {error}
