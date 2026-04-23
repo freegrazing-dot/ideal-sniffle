@@ -2,16 +2,17 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { uploadImage } from '../lib/storage';
 
-type ProductRow = {
+type MerchandiseRow = {
   id: string;
   name: string;
   description: string | null;
-  category: string | null;
   price: number | null;
-  inventory: number | null;
+  category: string | null;
+  sizes: string[] | null;
+  colors: string[] | null;
+  image_url: string | null;
+  stock_quantity: number | null;
   active: boolean | null;
-  main_image: string | null;
-  gallery_images: string[] | null;
   created_at?: string | null;
 };
 
@@ -20,38 +21,39 @@ const emptyForm = {
   description: '',
   category: '',
   price: '',
-  inventory: '',
+  stock_quantity: '',
+  sizes: '',
+  colors: '',
   active: true,
 };
 
 export default function MerchandiseAdmin() {
-  const [products, setProducts] = useState<ProductRow[]>([]);
+  const [products, setProducts] = useState<MerchandiseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
   const [form, setForm] = useState(emptyForm);
   const [mainImageFile, setMainImageFile] = useState<File | null>(null);
-  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
 
   const fetchProducts = async () => {
     setLoading(true);
     setMessage('');
 
     const { data, error } = await supabase
-      .from('products')
+      .from('merchandise_items')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error loading products:', error);
-      setMessage(`Error loading products: ${error.message}`);
+      console.error('Error loading merchandise items:', error);
+      setMessage(`Error loading merchandise items: ${error.message}`);
       setProducts([]);
       setLoading(false);
       return;
     }
 
-    setProducts((data as ProductRow[]) || []);
+    setProducts((data as MerchandiseRow[]) || []);
     setLoading(false);
   };
 
@@ -62,7 +64,6 @@ export default function MerchandiseAdmin() {
   const resetForm = () => {
     setForm(emptyForm);
     setMainImageFile(null);
-    setGalleryFiles([]);
   };
 
   const handleMainImageUpload = async (): Promise<string | null> => {
@@ -75,24 +76,6 @@ export default function MerchandiseAdmin() {
     }
 
     return result.url;
-  };
-
-  const handleGalleryUploads = async (): Promise<string[]> => {
-    if (!galleryFiles.length) return [];
-
-    const uploadedUrls: string[] = [];
-
-    for (const file of galleryFiles) {
-      const result = await uploadImage(file, 'merchandise');
-
-      if (!result || result.error || !result.url) {
-        throw new Error(result?.error || `Failed to upload gallery image: ${file.name}`);
-      }
-
-      uploadedUrls.push(result.url);
-    }
-
-    return uploadedUrls;
   };
 
   const handleSave = async () => {
@@ -111,25 +94,29 @@ export default function MerchandiseAdmin() {
     setSaving(true);
 
     try {
-      const mainImageUrl = await handleMainImageUpload();
-      const galleryImageUrls = await handleGalleryUploads();
+      const imageUrl = await handleMainImageUpload();
 
       const payload = {
         name: form.name.trim(),
         description: form.description.trim() || null,
         category: form.category.trim() || null,
         price: Number(form.price),
-        inventory: form.inventory.trim() ? Number(form.inventory) : 0,
+        stock_quantity: form.stock_quantity.trim() ? Number(form.stock_quantity) : 0,
+        sizes: form.sizes.trim()
+          ? form.sizes.split(',').map((s) => s.trim()).filter(Boolean)
+          : [],
+        colors: form.colors.trim()
+          ? form.colors.split(',').map((s) => s.trim()).filter(Boolean)
+          : [],
+        image_url: imageUrl,
         active: form.active,
-        main_image: mainImageUrl,
-        gallery_images: galleryImageUrls.length ? galleryImageUrls : [],
       };
 
-      const { error } = await supabase.from('products').insert([payload]);
+      const { error } = await supabase.from('merchandise_items').insert([payload]);
 
       if (error) {
-        console.error('Error saving product:', error);
-        throw new Error(error.message || 'Failed to save product');
+        console.error('Error saving merchandise item:', error);
+        throw new Error(error.message || 'Failed to save merchandise item');
       }
 
       setMessage('Product saved successfully.');
@@ -149,10 +136,10 @@ export default function MerchandiseAdmin() {
 
     setMessage('');
 
-    const { error } = await supabase.from('products').delete().eq('id', id);
+    const { error } = await supabase.from('merchandise_items').delete().eq('id', id);
 
     if (error) {
-      console.error('Error deleting product:', error);
+      console.error('Error deleting merchandise item:', error);
       setMessage(`Error deleting product: ${error.message}`);
       return;
     }
@@ -161,16 +148,16 @@ export default function MerchandiseAdmin() {
     await fetchProducts();
   };
 
-  const toggleActive = async (product: ProductRow) => {
+  const toggleActive = async (product: MerchandiseRow) => {
     setMessage('');
 
     const { error } = await supabase
-      .from('products')
+      .from('merchandise_items')
       .update({ active: !product.active })
       .eq('id', product.id);
 
     if (error) {
-      console.error('Error updating product:', error);
+      console.error('Error updating merchandise item:', error);
       setMessage(`Error updating product: ${error.message}`);
       return;
     }
@@ -182,8 +169,8 @@ export default function MerchandiseAdmin() {
     <div className="p-6 space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Merchandise Admin</h2>
-        <p className="text-sm text-gray-600 mt-1">
-          Add products, upload images, and manage inventory.
+        <p className="mt-1 text-sm text-gray-600">
+          Add merchandise, upload images, and manage stock.
         </p>
       </div>
 
@@ -204,7 +191,7 @@ export default function MerchandiseAdmin() {
 
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Product Name
             </label>
             <input
@@ -217,7 +204,7 @@ export default function MerchandiseAdmin() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Category
             </label>
             <input
@@ -230,7 +217,7 @@ export default function MerchandiseAdmin() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
               Price
             </label>
             <input
@@ -244,21 +231,47 @@ export default function MerchandiseAdmin() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Inventory
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Stock Quantity
             </label>
             <input
               type="number"
-              value={form.inventory}
-              onChange={(e) => setForm((prev) => ({ ...prev, inventory: e.target.value }))}
+              value={form.stock_quantity}
+              onChange={(e) => setForm((prev) => ({ ...prev, stock_quantity: e.target.value }))}
               className="w-full rounded-lg border border-gray-300 px-4 py-2"
               placeholder="10"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Sizes
+            </label>
+            <input
+              type="text"
+              value={form.sizes}
+              onChange={(e) => setForm((prev) => ({ ...prev, sizes: e.target.value }))}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+              placeholder="16oz, 20oz, 24oz"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Colors
+            </label>
+            <input
+              type="text"
+              value={form.colors}
+              onChange={(e) => setForm((prev) => ({ ...prev, colors: e.target.value }))}
+              className="w-full rounded-lg border border-gray-300 px-4 py-2"
+              placeholder="White, Navy, Seafoam"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
+          <label className="mb-2 block text-sm font-medium text-gray-700">
             Description
           </label>
           <textarea
@@ -270,39 +283,19 @@ export default function MerchandiseAdmin() {
           />
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Main Image
-            </label>
-            <input
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              onChange={(e) => setMainImageFile(e.target.files?.[0] || null)}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-            />
-            {mainImageFile && (
-              <p className="mt-2 text-sm text-gray-600">{mainImageFile.name}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Gallery Images
-            </label>
-            <input
-              type="file"
-              accept="image/jpeg,image/jpg,image/png,image/webp"
-              multiple
-              onChange={(e) => setGalleryFiles(Array.from(e.target.files || []))}
-              className="w-full rounded-lg border border-gray-300 px-4 py-2"
-            />
-            {galleryFiles.length > 0 && (
-              <p className="mt-2 text-sm text-gray-600">
-                {galleryFiles.length} gallery image(s) selected
-              </p>
-            )}
-          </div>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-gray-700">
+            Main Image
+          </label>
+          <input
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            onChange={(e) => setMainImageFile(e.target.files?.[0] || null)}
+            className="w-full rounded-lg border border-gray-300 px-4 py-2"
+          />
+          {mainImageFile && (
+            <p className="mt-2 text-sm text-gray-600">{mainImageFile.name}</p>
+          )}
         </div>
 
         <label className="flex items-center gap-3">
@@ -336,7 +329,7 @@ export default function MerchandiseAdmin() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Existing Products</h3>
+        <h3 className="mb-4 text-lg font-semibold text-gray-900">Existing Products</h3>
 
         {loading ? (
           <div className="text-sm text-gray-600">Loading products...</div>
@@ -347,9 +340,9 @@ export default function MerchandiseAdmin() {
             {products.map((product) => (
               <div key={product.id} className="rounded-xl border border-gray-200 p-4 space-y-3">
                 <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
-                  {product.main_image ? (
+                  {product.image_url ? (
                     <img
-                      src={product.main_image}
+                      src={product.image_url}
                       alt={product.name}
                       className="h-full w-full object-cover"
                     />
@@ -367,9 +360,10 @@ export default function MerchandiseAdmin() {
 
                 <div className="text-sm text-gray-700">
                   <div>Price: ${(product.price ?? 0).toFixed(2)}</div>
-                  <div>Inventory: {product.inventory ?? 0}</div>
+                  <div>Stock: {product.stock_quantity ?? 0}</div>
                   <div>Status: {product.active ? 'Active' : 'Inactive'}</div>
-                  <div>Gallery: {product.gallery_images?.length ?? 0} images</div>
+                  <div>Sizes: {product.sizes?.join(', ') || 'None'}</div>
+                  <div>Colors: {product.colors?.join(', ') || 'None'}</div>
                 </div>
 
                 <div className="flex gap-2">
