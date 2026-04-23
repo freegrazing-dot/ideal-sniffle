@@ -3,10 +3,10 @@ import { X, ShoppingCart, Shirt, ChevronLeft, ChevronRight } from 'lucide-react'
 import { MerchandiseItem } from '../types';
 
 type ModalMerchandiseItem = MerchandiseItem & {
-  sizes?: string[];
-  colors?: string[];
-  gallery_images?: string[];
-  back_image_url?: string;
+  sizes?: string[] | string | null;
+  colors?: string[] | null;
+  gallery_images?: string[] | null;
+  back_image_url?: string | null;
   stock_quantity?: number | null;
 };
 
@@ -19,7 +19,7 @@ interface MerchandiseModalProps {
     size: string,
     color: string,
     quantity: number
-  ) => void;
+  ) => Promise<void> | void;
 }
 
 const DEFAULT_APPAREL_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
@@ -35,6 +35,7 @@ export default function AdminMerchModal({
   const [selectedColor, setSelectedColor] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [isAdding, setIsAdding] = useState(false);
 
   if (!isOpen) return null;
 
@@ -43,6 +44,13 @@ export default function AdminMerchModal({
     item.name.toLowerCase().includes('shirt');
 
  const getAvailableSizes = (item: ModalMerchandiseItem) => {
+  const name = (item.name || '').toLowerCase();
+  const category = (item.category || '').toLowerCase();
+
+  if (name.includes('hat') || category.includes('hat')) {
+    return [];
+  }
+
   if (Array.isArray(item.sizes) && item.sizes.length > 0) {
     return item.sizes;
   }
@@ -62,7 +70,6 @@ export default function AdminMerchModal({
     if (Array.isArray(item.colors) && item.colors.length > 0) {
       return item.colors;
     }
-
     return [];
   };
 
@@ -77,7 +84,15 @@ export default function AdminMerchModal({
     setCurrentImageIndex(0);
   };
 
-  const handleAddSelectedItemToCart = () => {
+  const handleBackToAll = () => {
+    setSelectedItem(null);
+    setSelectedSize('');
+    setSelectedColor('');
+    setQuantity(1);
+    setCurrentImageIndex(0);
+  };
+
+  const handleAddSelectedItemToCart = async () => {
     if (!selectedItem) return;
 
     const sizes = getAvailableSizes(selectedItem);
@@ -90,12 +105,18 @@ export default function AdminMerchModal({
 
     const colorToUse = colors.length > 0 ? selectedColor : '';
 
-    onAddToCart(selectedItem, selectedSize, colorToUse, quantity);
-    setSelectedItem(null);
-    setSelectedSize('');
-    setSelectedColor('');
-    setQuantity(1);
-    setCurrentImageIndex(0);
+    try {
+      setIsAdding(true);
+      await onAddToCart(selectedItem, selectedSize, colorToUse, quantity);
+
+      handleBackToAll();
+      onClose();
+    } catch (error) {
+      console.error('Failed to add merchandise to cart:', error);
+      alert('Failed to add item to cart');
+    } finally {
+      setIsAdding(false);
+    }
   };
 
   const allImages = useMemo(() => {
@@ -104,8 +125,8 @@ export default function AdminMerchModal({
     return [
       ...(selectedItem.image_url ? [selectedItem.image_url] : []),
       ...(selectedItem.back_image_url ? [selectedItem.back_image_url] : []),
-      ...(selectedItem.gallery_images || []),
-    ].filter(Boolean);
+      ...((selectedItem.gallery_images || []).filter(Boolean) as string[]),
+    ];
   }, [selectedItem]);
 
   const nextImage = () => {
@@ -194,13 +215,7 @@ export default function AdminMerchModal({
             ) : (
               <div>
                 <button
-                  onClick={() => {
-                    setSelectedItem(null);
-                    setSelectedSize('');
-                    setSelectedColor('');
-                    setQuantity(1);
-                    setCurrentImageIndex(0);
-                  }}
+                  onClick={handleBackToAll}
                   className="mb-4 flex items-center gap-2 font-medium text-teal-600 hover:text-teal-700"
                   type="button"
                 >
@@ -222,7 +237,7 @@ export default function AdminMerchModal({
                             <button
                               onClick={prevImage}
                               type="button"
-                              className="absolute top-1/2 left-3 -translate-y-1/2 rounded-full bg-white/90 p-3 text-teal-900 shadow-lg transition-opacity hover:bg-white"
+                              className="absolute top-1/2 left-3 -translate-y-1/2 rounded-full bg-white/90 p-3 text-teal-900 shadow-lg hover:bg-white"
                               aria-label="Previous image"
                             >
                               <ChevronLeft className="h-6 w-6" />
@@ -231,7 +246,7 @@ export default function AdminMerchModal({
                             <button
                               onClick={nextImage}
                               type="button"
-                              className="absolute top-1/2 right-3 -translate-y-1/2 rounded-full bg-white/90 p-3 text-teal-900 shadow-lg transition-opacity hover:bg-white"
+                              className="absolute top-1/2 right-3 -translate-y-1/2 rounded-full bg-white/90 p-3 text-teal-900 shadow-lg hover:bg-white"
                               aria-label="Next image"
                             >
                               <ChevronRight className="h-6 w-6" />
@@ -329,10 +344,11 @@ export default function AdminMerchModal({
                       <button
                         onClick={handleAddSelectedItemToCart}
                         type="button"
-                        className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 py-4 text-lg font-semibold text-white shadow-md transition-all hover:from-teal-600 hover:to-cyan-600 hover:shadow-lg"
+                        disabled={isAdding}
+                        className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 py-4 text-lg font-semibold text-white shadow-md transition-all hover:from-teal-600 hover:to-cyan-600 hover:shadow-lg disabled:opacity-50"
                       >
                         <ShoppingCart className="h-6 w-6" />
-                        Add to Cart
+                        {isAdding ? 'Adding...' : 'Add to Cart'}
                       </button>
                     </div>
                   </div>
