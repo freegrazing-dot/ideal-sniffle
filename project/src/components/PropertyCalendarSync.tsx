@@ -49,9 +49,9 @@ export function PropertyCalendarSync() {
   const fetchData = async () => {
     try {
       const { data: propertiesData, error: propertiesError } = await supabase
-        .from('properties')
-        .select('*')
-        .order('name');
+       .from('properties')
+.select('*')
+.order('created_at', { ascending: true })
 
       if (propertiesError) throw propertiesError;
       setProperties(propertiesData || []);

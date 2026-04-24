@@ -59,12 +59,20 @@ export default function PropertyCalendar({
     };
   }, [property.id]);
 
-  const fetchPricingRules = async () => {
-    await supabase
-      .from('property_pricing_rules')
-      .select('*')
-      .eq('property_id', property.id)
-      .eq('active', true);
+ const fetchPricingRules = async () => {
+  const { data, error } = await supabase
+    .from('property_pricing_rules')
+    .select('*')
+    .eq('property_id', property.id)
+    .eq('active', true);
+
+  if (error) {
+    console.error('Error fetching pricing rules:', error);
+    return [];
+  }
+
+  return data;
+};
   };
 
   const fetchBookedDates = async () => {
