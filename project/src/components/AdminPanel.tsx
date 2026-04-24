@@ -1,3 +1,4 @@
+import { PropertyCalendarSync } from './PropertyCalendarSync';
 import MerchandiseAdmin from './MerchandiseAdmin';
 import { useState } from 'react';
 
