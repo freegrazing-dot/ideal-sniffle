@@ -75,7 +75,7 @@ export function AdminCalendarView() {
       const dateStr = toDateString(date);
 
       const dayBookings = bookings.filter((booking) => {
-        return booking.check_in_date <= dateStr && booking.check_out_date > dateStr;
+        return booking.check_in_date <= dateStr && booking.check_out_date >= dateStr;
       });
 
       dataMap.set(dateStr, {
@@ -149,17 +149,17 @@ export function AdminCalendarView() {
     return className;
   };
 
-  const getBookingLabel = (booking: RentalBooking, dateStr: string) => {
-    if (booking.check_in_date === dateStr) return `Check-in: ${booking.customer_name}`;
-    if (booking.check_out_date === dateStr) return `Check-out: ${booking.customer_name}`;
-    return `${booking.customer_name}`;
-  };
+ const getBookingLabel = (booking, dateStr) => {
+  if (booking.check_in_date === dateStr) return `Check-in: ${booking.customer_name}`;
+  if (booking.check_out_date === dateStr) return `Check-out: ${booking.customer_name}`;
+  return booking.customer_name;
+};
 
-  const getBookingColor = (booking: RentalBooking, dateStr: string) => {
-    if (booking.check_in_date === dateStr) return 'bg-green-100 text-green-800';
-    if (booking.check_out_date === dateStr) return 'bg-red-100 text-red-800';
-    return 'bg-blue-100 text-blue-800';
-  };
+  const getBookingColor = (booking, dateStr) => {
+  if (booking.check_in_date === dateStr) return 'bg-green-100 text-green-800';
+  if (booking.check_out_date === dateStr) return 'bg-red-100 text-red-800';
+  return 'bg-blue-100 text-blue-800';
+};
 
   const days = getDaysInMonth();
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

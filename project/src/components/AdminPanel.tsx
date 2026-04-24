@@ -18,6 +18,7 @@ type Tab =
   | 'settings'
   | 'tax'
   | 'merch';
+  | 'calendar-sync'
 
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<Tab>('properties');
@@ -64,6 +65,7 @@ export default function AdminPanel() {
         <TabButton id="settings" label="Settings" />
         <TabButton id="tax" label="Tax Report" />
         <TabButton id="merch" label="Merch" />
+        <TabButton id="calendar-sync" label="Calendar Sync" />
       </div>
 
       <div>
@@ -75,6 +77,7 @@ export default function AdminPanel() {
         {activeTab === 'settings' && <SiteSettings />}
         {activeTab === 'tax' && <TaxReport />}
         {activeTab === 'merch' && <MerchandiseAdmin />}
+        {activeTab === 'calendar-sync' && <PropertyCalendarSync />}
       </div>
     </div>
   );
