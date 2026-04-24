@@ -546,8 +546,8 @@ export function PropertyCalendarSync() {
             );
           })}
         </div>
-      )}
+         )}
     </div>
-     );
+  );
 }
 
