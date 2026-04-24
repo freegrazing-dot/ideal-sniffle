@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Home, CheckCircle, XCircle, DollarSign, AlertCircle } from 'lucide-react';
+import { Home, CheckCircle, XCircle, DollarSign, AlertCircle, Trash2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 interface RentalBooking {
@@ -35,7 +35,30 @@ export function RentalBookingsAdmin() {
   useEffect(() => {
     fetchBookings();
   }, []);
+const deleteBooking = async (bookingId: string) => {
+  if (!confirm('Delete this booking? This cannot be undone.')) {
+    return;
+  }
 
+  setActionLoading(bookingId);
+
+  try {
+    const { error } = await supabase
+      .from('rental_bookings')
+      .delete()
+      .eq('id', bookingId);
+
+    if (error) throw error;
+
+    await fetchBookings();
+    alert('Booking deleted successfully.');
+  } catch (error) {
+    console.error('Error deleting booking:', error);
+    alert('Failed to delete booking.');
+  } finally {
+    setActionLoading(null);
+  }
+};
   const fetchBookings = async () => {
     try {
       const { data, error } = await supabase
@@ -284,6 +307,14 @@ export function RentalBookingsAdmin() {
                           Charged
                         </span>
                       )}
+<button
+  onClick={() => deleteBooking(booking.id)}
+  disabled={actionLoading === booking.id}
+  className="mt-2 px-3 py-1 bg-gray-700 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-1"
+>
+  <Trash2 className="w-4 h-4" />
+  Delete
+</button>
                     </td>
                   </tr>
                 ))}
