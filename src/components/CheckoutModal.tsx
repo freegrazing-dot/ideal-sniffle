@@ -27,7 +27,6 @@ export default function CheckoutModal({
   lodgingTax,
   salesTax,
   depositAmount,
-  promoCode: initialPromoCode = '',
   promoDiscount: initialPromoDiscount = 0,
   onPromoChange,
 }: CheckoutModalProps) {
@@ -43,18 +42,9 @@ export default function CheckoutModal({
 
   if (!isOpen) return null;
 
-// same imports and code you already have above...
-
   const hasProperties = items.some((item) => item.type === 'property');
   const hasMerchandise = items.some((item) => item.type === 'merchandise');
-
-  const isDepositOnly =
-    items.length > 0 && items.every((item) => item.type === 'security_deposit');
-  const getOrderType = () => {
-    if (hasProperties) return 'properties';
-    if (hasMerchandise) return 'merch';
-    return 'activities';
-  };
+  const isDepositOnly = items.length > 0 && items.every((item) => item.type === 'security_deposit');
 
   const safeSubtotal = subtotal || 0;
   const safeLodgingTax = lodgingTax || 0;
@@ -63,17 +53,15 @@ export default function CheckoutModal({
 
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = safeSubtotal - discountAmount;
+  const adjustedSalesTax = promoDiscount > 0 ? discountedSubtotal * 0.065 : safeSalesTax;
+  const adjustedLodgingTax = promoDiscount > 0 && hasProperties ? discountedSubtotal * 0.115 : safeLodgingTax;
+  const finalTotal = promoDiscount > 0 ? discountedSubtotal + adjustedSalesTax + adjustedLodgingTax : totalAmount;
 
-  const adjustedSalesTax =
-    promoDiscount > 0 ? discountedSubtotal * 0.065 : safeSalesTax;
-
-  const adjustedLodgingTax =
-    promoDiscount > 0 && hasProperties ? discountedSubtotal * 0.115 : safeLodgingTax;
-
-  const finalTotal =
-    promoDiscount > 0
-      ? discountedSubtotal + adjustedSalesTax + adjustedLodgingTax
-      : totalAmount;
+  const getOrderType = () => {
+    if (hasProperties) return 'properties';
+    if (hasMerchandise) return 'merch';
+    return 'activities';
+  };
 
   async function handleApplyPromoCode() {
     const codeToUse = promoCode.trim().toUpperCase();
@@ -103,20 +91,14 @@ export default function CheckoutModal({
         return;
       }
 
-      const nextDiscount =
-        Number(
-          data.discount_percent ??
-            data.discount_percentage ??
-            data.discount_value ??
-            0
-        ) || 0;
+      const nextDiscount = Number(data.discount_percent ?? data.discount_percentage ?? data.discount_value ?? 0) || 0;
 
       setPromoCode(data.code || codeToUse);
       setPromoDiscount(nextDiscount);
       setPromoApplied(true);
       setPromoMessage(`Promo applied: ${nextDiscount}% off`);
       onPromoChange?.(data.code || codeToUse, nextDiscount);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Promo error:', err);
       setPromoApplied(false);
       setPromoDiscount(0);
@@ -147,25 +129,23 @@ export default function CheckoutModal({
     try {
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`;
 
-      const paymentData = {
-        items,
-        customerName,
-        customerEmail,
-        subtotal: safeSubtotal,
-        lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax,
-        salesTax: promoDiscount > 0 ? adjustedSalesTax : safeSalesTax,
-        totalPrice: finalTotal,
-        promoCode: promoApplied ? promoCode : undefined,
-        promoDiscount: promoApplied ? promoDiscount : undefined,
-      };
-
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(paymentData),
+        body: JSON.stringify({
+          items,
+          customerName,
+          customerEmail,
+          subtotal: safeSubtotal,
+          lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax,
+          salesTax: promoDiscount > 0 ? adjustedSalesTax : safeSalesTax,
+          totalPrice: finalTotal,
+          promoCode: promoApplied ? promoCode : undefined,
+          promoDiscount: promoApplied ? promoDiscount : undefined,
+        }),
       });
 
       if (!response.ok) {
@@ -253,29 +233,27 @@ export default function CheckoutModal({
             </div>
           </div>
 
-         <div>
-  <label className="mb-2 block text-sm font-medium">Full Name</label>
-  <input
-    value={customerName}
-    onChange={(e) => setCustomerName(e.target.value)}
-    className="w-full rounded-lg border px-4 py-3"
-    placeholder="John Doe"
-  />
-</div>
-
-<div>
-  <label className="mb-2 block text-sm font-medium">Email Address</label>
-  <input
-    type="email"
-    value={customerEmail}
-    onChange={(e) => setCustomerEmail(e.target.value)}
-    className="w-full rounded-lg border px-4 py-3"
-    placeholder="john@example.com"
-  />
-</div>
+          <div>
+            <label className="mb-2 block text-sm font-medium">Full Name</label>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full rounded-lg border px-4 py-3"
+              placeholder="John Doe"
+            />
+          </div>
 
           <div>
-            
+            <label className="mb-2 block text-sm font-medium">Email Address</label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              className="w-full rounded-lg border px-4 py-3"
+              placeholder="john@example.com"
+            />
+          </div>
+
           {!isDepositOnly && (
             <div>
               <label className="mb-2 block text-sm font-medium">Promo Code</label>
@@ -286,11 +264,7 @@ export default function CheckoutModal({
                     <Tag className="h-4 w-4" />
                     <span>{promoCode} applied ({promoDiscount}% off)</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleRemovePromoCode}
-                    className="rounded bg-red-500 px-3 py-1 text-xs text-white"
-                  >
+                  <button type="button" onClick={handleRemovePromoCode} className="rounded bg-red-500 px-3 py-1 text-xs text-white">
                     Remove
                   </button>
                 </div>
@@ -320,6 +294,7 @@ export default function CheckoutModal({
               )}
             </div>
           )}
+
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
               {error}

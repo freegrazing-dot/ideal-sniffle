@@ -59,7 +59,7 @@ export default function PropertyCalendar({
     };
   }, [property.id]);
 
- const fetchPricingRules = async () => {
+const fetchPricingRules = async () => {
   const { data, error } = await supabase
     .from('property_pricing_rules')
     .select('*')
@@ -73,8 +73,6 @@ export default function PropertyCalendar({
 
   return data;
 };
-  };
-
   const fetchBookedDates = async () => {
     // First, clean up expired bookings
     await supabase.rpc('cleanup_expired_bookings');
