@@ -17,9 +17,8 @@ type Tab =
   | 'promo'
   | 'settings'
   | 'tax'
-  | 'merch';
-  | 'calendar-sync'
-
+  | 'merch'
+  | 'calendar-sync';
 export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState<Tab>('properties');
 
