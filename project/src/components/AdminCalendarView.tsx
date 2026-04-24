@@ -55,7 +55,7 @@ export function AdminCalendarView() {
 
     const { data, error } = await supabase
       .from('rental_bookings')
-      .select('*, properties(name)')
+      .select('*')
       .lte('check_in_date', endDateStr)
       .gte('check_out_date', startDateStr)
       .in('status', ['pending', 'confirmed']);
@@ -224,7 +224,7 @@ export function AdminCalendarView() {
                         <div
                           key={booking.id}
                           className={`text-xs px-1.5 py-0.5 rounded truncate ${getBookingColor(booking, dateStr)}`}
-                          title={`${booking.customer_name} - ${booking.properties?.name || 'Property'}`}
+                          title={`${booking.customer_name} - ${'Property Booking'}`}
                         >
                           {getBookingLabel(booking, dateStr)}
                         </div>
