@@ -64,12 +64,11 @@ export function AdminCalendarView() {
     const startDateStr = toDateString(firstDay);
     const endDateStr = toDateString(lastDay);
 
-    const { data: bookingData, error: bookingError } = await supabase
-      .from('rental_bookings')
-      .select('*, properties(*)')
-      .lte('check_in_date', endDateStr)
-      .gte('check_out_date', startDateStr)
-      .in('status', ['pending', 'confirmed']);
+   const { data: bookingData, error: bookingError } = await supabase
+  .from('rental_bookings')
+  .select('*, properties(*)')
+  .lte('check_in_date', endDateStr)
+  .gte('check_out_date', startDateStr);
 
     if (bookingError) {
       console.error('Error loading rental bookings:', bookingError);
