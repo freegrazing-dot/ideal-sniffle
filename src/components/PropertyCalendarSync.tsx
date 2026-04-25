@@ -51,7 +51,7 @@ export function PropertyCalendarSync() {
       const { data: propertiesData, error: propertiesError } = await supabase
         .from('properties')
         .select('*')
-        .order('name');
+       .order('created_at', { ascending: true })
 
       if (propertiesError) throw propertiesError;
       setProperties(propertiesData || []);
