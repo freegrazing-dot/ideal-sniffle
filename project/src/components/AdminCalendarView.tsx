@@ -19,9 +19,20 @@ interface RentalBooking {
   };
 }
 
+interface ExternalEvent {
+  id: string;
+  property_id: string;
+  source: string;
+  start_date: string;
+  end_date: string;
+  summary: string;
+  status?: string;
+}
+
 interface DayData {
   date: Date;
   bookings: RentalBooking[];
+  external: ExternalEvent[];
 }
 
 export function AdminCalendarView() {
@@ -53,21 +64,30 @@ export function AdminCalendarView() {
     const startDateStr = toDateString(firstDay);
     const endDateStr = toDateString(lastDay);
 
-    const { data, error } = await supabase
+    const { data: bookingData, error: bookingError } = await supabase
       .from('rental_bookings')
-      .select('*')
+      .select('*, properties(*)')
       .lte('check_in_date', endDateStr)
       .gte('check_out_date', startDateStr)
       .in('status', ['pending', 'confirmed']);
 
-    if (error) {
-      console.error('Error loading rental bookings:', error);
-      setMonthData(new Map());
-      setLoading(false);
-      return;
+    if (bookingError) {
+      console.error('Error loading rental bookings:', bookingError);
     }
 
-    const bookings = (data || []) as RentalBooking[];
+    const { data: externalData, error: externalError } = await supabase
+      .from('external_calendar_events')
+      .select('id, property_id, source, start_date, end_date, summary, status')
+      .lte('start_date', endDateStr)
+      .gte('end_date', startDateStr)
+      .order('start_date', { ascending: true });
+
+    if (externalError) {
+      console.error('Error loading external calendar events:', externalError);
+    }
+
+    const bookings = (bookingData || []) as RentalBooking[];
+    const externalEvents = (externalData || []) as ExternalEvent[];
     const dataMap = new Map<string, DayData>();
 
     for (let day = 1; day <= lastDay.getDate(); day++) {
@@ -78,9 +98,14 @@ export function AdminCalendarView() {
         return booking.check_in_date <= dateStr && booking.check_out_date >= dateStr;
       });
 
+      const dayExternal = externalEvents.filter((event) => {
+        return event.start_date <= dateStr && event.end_date >= dateStr;
+      });
+
       dataMap.set(dateStr, {
         date,
         bookings: dayBookings,
+        external: dayExternal,
       });
     }
 
@@ -121,6 +146,11 @@ export function AdminCalendarView() {
     return currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
+  const formatSource = (source: string) => {
+    if (!source) return 'External';
+    return source.charAt(0).toUpperCase() + source.slice(1);
+  };
+
   const getDayClassName = (date: Date | null, isSelected: boolean) => {
     if (!date) return '';
 
@@ -132,7 +162,8 @@ export function AdminCalendarView() {
     const thisDate = new Date(date);
     thisDate.setHours(0, 0, 0, 0);
 
-    let className = 'min-h-28 p-2 border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors bg-white';
+    let className =
+      'min-h-28 p-2 border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors bg-white';
 
     if (thisDate.getTime() === today.getTime()) {
       className += ' ring-2 ring-cyan-500';
@@ -142,24 +173,43 @@ export function AdminCalendarView() {
       className += ' bg-cyan-50';
     }
 
-    if (dayData && dayData.bookings.length > 0) {
+    if (dayData && (dayData.bookings.length > 0 || dayData.external.length > 0)) {
       className += ' bg-green-50';
     }
 
     return className;
   };
 
- const getBookingLabel = (booking, dateStr) => {
-  if (booking.check_in_date === dateStr) return `Check-in: ${booking.customer_name}`;
-  if (booking.check_out_date === dateStr) return `Check-out: ${booking.customer_name}`;
-  return booking.customer_name;
-};
+  const getBookingLabel = (booking: RentalBooking, dateStr: string) => {
+    if (booking.check_in_date === dateStr) return `Check-in: ${booking.customer_name}`;
+    if (booking.check_out_date === dateStr) return `Check-out: ${booking.customer_name}`;
+    return booking.customer_name;
+  };
 
-  const getBookingColor = (booking, dateStr) => {
-  if (booking.check_in_date === dateStr) return 'bg-green-100 text-green-800';
-  if (booking.check_out_date === dateStr) return 'bg-red-100 text-red-800';
-  return 'bg-blue-100 text-blue-800';
-};
+  const getBookingColor = (booking: RentalBooking, dateStr: string) => {
+    if (booking.check_in_date === dateStr) return 'bg-green-100 text-green-800';
+    if (booking.check_out_date === dateStr) return 'bg-red-100 text-red-800';
+    return 'bg-blue-100 text-blue-800';
+  };
+
+  const getExternalColor = (source: string) => {
+    const normalized = (source || '').toLowerCase();
+
+    if (normalized.includes('airbnb')) return 'bg-pink-100 text-pink-800';
+    if (normalized.includes('vrbo')) return 'bg-purple-100 text-purple-800';
+    if (normalized.includes('booking')) return 'bg-yellow-100 text-yellow-800';
+
+    return 'bg-gray-200 text-gray-800';
+  };
+
+  const getExternalLabel = (event: ExternalEvent, dateStr: string) => {
+    const source = formatSource(event.source);
+
+    if (event.start_date === dateStr) return `${source} start`;
+    if (event.end_date === dateStr) return `${source} end`;
+
+    return `${source} blocked`;
+  };
 
   const days = getDaysInMonth();
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -210,6 +260,10 @@ export function AdminCalendarView() {
               const dayData = monthData.get(dateStr);
               const isSelected = dateStr === selectedDate;
 
+              const visibleBookings = dayData?.bookings || [];
+              const visibleExternal = dayData?.external || [];
+              const totalItems = visibleBookings.length + visibleExternal.length;
+
               return (
                 <div
                   key={dateStr}
@@ -218,21 +272,31 @@ export function AdminCalendarView() {
                 >
                   <div className="font-semibold text-gray-900 mb-1">{day.getDate()}</div>
 
-                  {dayData && dayData.bookings.length > 0 && (
+                  {dayData && totalItems > 0 && (
                     <div className="space-y-1">
-                      {dayData.bookings.slice(0, 3).map((booking) => (
+                      {visibleBookings.slice(0, 2).map((booking) => (
                         <div
-                          key={booking.id}
+                          key={`booking-${booking.id}`}
                           className={`text-xs px-1.5 py-0.5 rounded truncate ${getBookingColor(booking, dateStr)}`}
-                          title={`${booking.customer_name} - ${'Property Booking'}`}
+                          title={`${booking.customer_name} - TKAC Booking`}
                         >
                           {getBookingLabel(booking, dateStr)}
                         </div>
                       ))}
 
-                      {dayData.bookings.length > 3 && (
+                      {visibleExternal.slice(0, 3).map((event) => (
+                        <div
+                          key={`external-${event.id}`}
+                          className={`text-xs px-1.5 py-0.5 rounded truncate ${getExternalColor(event.source)}`}
+                          title={`${formatSource(event.source)} - ${event.summary || 'Blocked'}`}
+                        >
+                          {getExternalLabel(event, dateStr)}
+                        </div>
+                      ))}
+
+                      {totalItems > 5 && (
                         <div className="text-xs text-gray-600 font-medium">
-                          +{dayData.bookings.length - 3} more
+                          +{totalItems - 5} more
                         </div>
                       )}
                     </div>
@@ -246,15 +310,32 @@ export function AdminCalendarView() {
         <div className="mt-4 flex flex-wrap gap-4 text-sm">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-green-100 border border-green-200 rounded" />
-            <span className="text-gray-600">Check-in</span>
+            <span className="text-gray-600">TKAC Check-in</span>
           </div>
+
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded" />
-            <span className="text-gray-600">Booked Night</span>
+            <span className="text-gray-600">TKAC Booked Night</span>
           </div>
+
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-red-100 border border-red-200 rounded" />
-            <span className="text-gray-600">Check-out</span>
+            <span className="text-gray-600">TKAC Check-out</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-pink-100 border border-pink-200 rounded" />
+            <span className="text-gray-600">Airbnb</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-purple-100 border border-purple-200 rounded" />
+            <span className="text-gray-600">VRBO</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-yellow-100 border border-yellow-200 rounded" />
+            <span className="text-gray-600">Booking.com</span>
           </div>
         </div>
       </div>
@@ -270,27 +351,50 @@ export function AdminCalendarView() {
             })}
           </h3>
 
-          {selectedDayData.bookings.length > 0 ? (
+          {selectedDayData.bookings.length > 0 || selectedDayData.external.length > 0 ? (
             <div className="space-y-3">
               {selectedDayData.bookings.map((booking) => (
-                <div key={booking.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div key={`selected-booking-${booking.id}`} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                   <div className="font-semibold text-gray-900">
-                    {booking.properties?.name || 'Property'}
+                    TKAC Booking — {booking.properties?.name || 'Property'}
                   </div>
+
                   <div className="text-sm text-gray-700 mt-1">
                     {booking.customer_name} — {booking.customer_email}
                   </div>
+
                   <div className="text-sm text-gray-600 mt-1">
                     {booking.check_in_date} to {booking.check_out_date} • {booking.guests} guest(s)
                   </div>
+
                   <div className="text-sm text-gray-600 mt-1">
                     ${Number(booking.total_price || 0).toFixed(2)} • {booking.status}
                   </div>
                 </div>
               ))}
+
+              {selectedDayData.external.map((event) => (
+                <div key={`selected-external-${event.id}`} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="font-semibold text-gray-900">
+                    {formatSource(event.source)} Blocked Date
+                  </div>
+
+                  <div className="text-sm text-gray-700 mt-1">
+                    {event.summary || 'Not available'}
+                  </div>
+
+                  <div className="text-sm text-gray-600 mt-1">
+                    {event.start_date} to {event.end_date}
+                  </div>
+
+                  <div className="text-sm text-gray-600 mt-1">
+                    Status: {event.status || 'blocked'}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
-            <p className="text-gray-500 text-center py-8">No rental bookings for this date</p>
+            <p className="text-gray-500 text-center py-8">No bookings or blocked dates for this date</p>
           )}
         </div>
       )}
