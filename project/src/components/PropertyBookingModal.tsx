@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Property } from '../types'
 import { calculateRentalTaxes, formatCurrency } from '../lib/tax-calculations'
 import { useCart } from '../lib/cart-context'
@@ -10,42 +10,148 @@ interface PropertyBookingModalProps {
   onClose: () => void
 }
 
-export default function PropertyBookingModal({
-  property,
-  onClose
-}: PropertyBookingModalProps) {
+export default function PropertyBookingModal({ property, onClose }: PropertyBookingModalProps) {
   const { addItem } = useCart()
 
   const [checkIn, setCheckIn] = useState('')
   const [checkOut, setCheckOut] = useState('')
   const [guests, setGuests] = useState(1)
-  const [checkingAvailability, setCheckingAvailability] = useState(false)
+  const [blockedDates, setBlockedDates] = useState<string[]>([])
+  const [calendarMonth, setCalendarMonth] = useState(new Date())
   const [availabilityError, setAvailabilityError] = useState('')
+  const [loadingBlockedDates, setLoadingBlockedDates] = useState(false)
 
   useEffect(() => {
     if (!property) return
 
-    const today = new Date()
-    today.setDate(today.getDate() + 1)
-
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
-    setCheckIn(today.toISOString().split('T')[0])
-    setCheckOut(tomorrow.toISOString().split('T')[0])
+    setCheckIn('')
+    setCheckOut('')
     setGuests(1)
     setAvailabilityError('')
+    setCalendarMonth(new Date())
+    loadBlockedDates()
   }, [property])
 
   if (!property) return null
 
-  const nights = Math.max(
-    0,
-    Math.ceil(
-      (new Date(checkOut).getTime() - new Date(checkIn).getTime()) /
-        (1000 * 60 * 60 * 24)
-    )
-  )
+  const toDateString = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  const expandDates = (start: string, end: string) => {
+    const dates: string[] = []
+    const current = new Date(`${start}T00:00:00`)
+    const last = new Date(`${end}T00:00:00`)
+
+    while (current < last) {
+      dates.push(toDateString(current))
+      current.setDate(current.getDate() + 1)
+    }
+
+    return dates
+  }
+
+  async function loadBlockedDates() {
+    if (!property) return
+
+    setLoadingBlockedDates(true)
+
+    try {
+      const { data: internal, error: internalError } = await supabase
+        .from('rental_bookings')
+        .select('check_in_date, check_out_date')
+        .eq('property_id', property.id)
+
+      if (internalError) throw internalError
+
+      const { data: external, error: externalError } = await supabase
+        .from('external_calendar_events')
+        .select('start_date, end_date')
+        .eq('property_id', property.id)
+
+      if (externalError) throw externalError
+
+      const blocked: string[] = []
+
+      internal?.forEach((booking) => {
+        blocked.push(...expandDates(booking.check_in_date, booking.check_out_date))
+      })
+
+      external?.forEach((event) => {
+        blocked.push(...expandDates(event.start_date, event.end_date))
+      })
+
+      setBlockedDates([...new Set(blocked)])
+    } catch (error) {
+      console.error('Error loading blocked dates:', error)
+      setAvailabilityError('Could not load availability. Please try again.')
+    } finally {
+      setLoadingBlockedDates(false)
+    }
+  }
+
+  const isPastDate = (dateStr: string) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return new Date(`${dateStr}T00:00:00`) < today
+  }
+
+  const isBlocked = (dateStr: string) => {
+    return blockedDates.includes(dateStr)
+  }
+
+  const rangeHasBlockedDate = (start: string, end: string) => {
+    const range = expandDates(start, end)
+    return range.some((date) => isBlocked(date) || isPastDate(date))
+  }
+
+  const handleDateClick = (dateStr: string) => {
+    if (isPastDate(dateStr)) {
+      setAvailabilityError('You cannot select a past date.')
+      return
+    }
+
+    if (isBlocked(dateStr)) {
+      setAvailabilityError('That date is already booked.')
+      return
+    }
+
+    setAvailabilityError('')
+
+    if (!checkIn || (checkIn && checkOut)) {
+      setCheckIn(dateStr)
+      setCheckOut('')
+      return
+    }
+
+    if (dateStr <= checkIn) {
+      setCheckIn(dateStr)
+      setCheckOut('')
+      return
+    }
+
+    if (rangeHasBlockedDate(checkIn, dateStr)) {
+      setAvailabilityError('That date range includes unavailable dates.')
+      return
+    }
+
+    setCheckOut(dateStr)
+  }
+
+  const nights =
+    checkIn && checkOut
+      ? Math.max(
+          0,
+          Math.ceil(
+            (new Date(`${checkOut}T00:00:00`).getTime() -
+              new Date(`${checkIn}T00:00:00`).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
+        )
+      : 0
 
   const cleaningFee = property.cleaning_fee || 150
   const subtotal = nights * property.price_per_night + cleaningFee
@@ -53,63 +159,16 @@ export default function PropertyBookingModal({
   const deposit = 500
   const total = taxes.grandTotal + deposit
 
-  async function checkAvailability() {
-    if (!property || !checkIn || !checkOut || nights <= 0) {
-      return false
-    }
-
-    setCheckingAvailability(true)
-    setAvailabilityError('')
-
-    try {
-      const { data: internalBookings, error: internalError } = await supabase
-        .from('rental_bookings')
-        .select('id, check_in_date, check_out_date')
-        .eq('property_id', property.id)
-        .lt('check_in_date', checkOut)
-        .gt('check_out_date', checkIn)
-
-      if (internalError) throw internalError
-
-      if (internalBookings && internalBookings.length > 0) {
-        setAvailabilityError('Those dates are already booked on TKAC.')
-        return false
-      }
-
-      const { data: externalBookings, error: externalError } = await supabase
-        .from('external_calendar_events')
-        .select('id, source, start_date, end_date')
-        .eq('property_id', property.id)
-        .lt('start_date', checkOut)
-        .gt('end_date', checkIn)
-
-      if (externalError) throw externalError
-
-      if (externalBookings && externalBookings.length > 0) {
-        const source = externalBookings[0].source || 'another platform'
-        setAvailabilityError(`Those dates are already blocked by ${source}.`)
-        return false
-      }
-
-      return true
-    } catch (error) {
-      console.error('Availability check failed:', error)
-      setAvailabilityError('Could not check availability. Please try again.')
-      return false
-    } finally {
-      setCheckingAvailability(false)
-    }
-  }
-
-  async function handleAddToCart() {
-    if (nights <= 0) {
-      setAvailabilityError('Check-out date must be after check-in date.')
+  function handleAddToCart() {
+    if (!checkIn || !checkOut || nights <= 0) {
+      setAvailabilityError('Please select a valid check-in and check-out date.')
       return
     }
 
-    const available = await checkAvailability()
-
-    if (!available) return
+    if (rangeHasBlockedDate(checkIn, checkOut)) {
+      setAvailabilityError('Selected dates include unavailable days.')
+      return
+    }
 
     addItem({
       id: `${property.id}-${checkIn}-${checkOut}`,
@@ -119,46 +178,150 @@ export default function PropertyBookingModal({
       guests,
       checkIn,
       checkOut,
-      quantity: 1
+      quantity: 1,
     })
 
     onClose()
   }
 
+  const getDaysInMonth = () => {
+    const year = calendarMonth.getFullYear()
+    const month = calendarMonth.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const days: (Date | null)[] = []
+
+    for (let i = 0; i < firstDay.getDay(); i++) {
+      days.push(null)
+    }
+
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+      days.push(new Date(year, month, day))
+    }
+
+    return days
+  }
+
+  const getDayClassName = (date: Date) => {
+    const dateStr = toDateString(date)
+    const unavailable = isPastDate(dateStr) || isBlocked(dateStr)
+    const selected = dateStr === checkIn || dateStr === checkOut
+    const inRange = checkIn && checkOut && dateStr > checkIn && dateStr < checkOut
+
+    if (unavailable) {
+      return 'bg-gray-200 text-gray-400 line-through cursor-not-allowed'
+    }
+
+    if (selected) {
+      return 'bg-blue-600 text-white cursor-pointer'
+    }
+
+    if (inRange) {
+      return 'bg-blue-100 text-blue-800 cursor-pointer'
+    }
+
+    return 'bg-white hover:bg-blue-50 text-gray-900 cursor-pointer'
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl w-full max-w-lg p-6 space-y-4">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-bold">Book {property.name}</h2>
-
           <button onClick={onClose}>
             <X />
           </button>
         </div>
 
-        <div className="space-y-3">
-          <label>Check in</label>
-          <input
-            type="date"
-            value={checkIn}
-            onChange={(e) => {
-              setCheckIn(e.target.value)
-              setAvailabilityError('')
-            }}
-            className="w-full border rounded p-2"
-          />
+        <div className="flex items-center justify-between border rounded-lg p-3">
+          <button
+            onClick={() =>
+              setCalendarMonth(
+                new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1)
+              )
+            }
+            className="p-2 hover:bg-gray-100 rounded"
+          >
+            <ChevronLeft />
+          </button>
 
-          <label>Check out</label>
-          <input
-            type="date"
-            value={checkOut}
-            onChange={(e) => {
-              setCheckOut(e.target.value)
-              setAvailabilityError('')
-            }}
-            className="w-full border rounded p-2"
-          />
+          <div className="font-semibold">
+            {calendarMonth.toLocaleDateString('en-US', {
+              month: 'long',
+              year: 'numeric',
+            })}
+          </div>
 
+          <button
+            onClick={() =>
+              setCalendarMonth(
+                new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1)
+              )
+            }
+            className="p-2 hover:bg-gray-100 rounded"
+          >
+            <ChevronRight />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-7 gap-1 text-center text-sm">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+            <div key={day} className="font-semibold text-gray-500 py-2">
+              {day}
+            </div>
+          ))}
+
+          {loadingBlockedDates ? (
+            <div className="col-span-7 py-8 text-gray-500">Loading availability...</div>
+          ) : (
+            getDaysInMonth().map((day, index) => {
+              if (!day) return <div key={`empty-${index}`} />
+
+              const dateStr = toDateString(day)
+
+              return (
+                <button
+                  key={dateStr}
+                  type="button"
+                  onClick={() => handleDateClick(dateStr)}
+                  disabled={isPastDate(dateStr) || isBlocked(dateStr)}
+                  className={`h-11 rounded-lg text-sm font-medium transition ${getDayClassName(day)}`}
+                >
+                  {day.getDate()}
+                </button>
+              )
+            })
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-4 text-sm border-t pt-3">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-blue-600" />
+            <span>Selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-blue-100 border" />
+            <span>Selected range</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-gray-200 border" />
+            <span>Unavailable</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="border rounded-lg p-3">
+            <div className="text-xs text-gray-500">Check in</div>
+            <div className="font-semibold">{checkIn || 'Select date'}</div>
+          </div>
+
+          <div className="border rounded-lg p-3">
+            <div className="text-xs text-gray-500">Check out</div>
+            <div className="font-semibold">{checkOut || 'Select date'}</div>
+          </div>
+        </div>
+
+        <div>
           <label>Guests</label>
           <input
             type="number"
@@ -166,7 +329,7 @@ export default function PropertyBookingModal({
             max={property.max_guests}
             value={guests}
             onChange={(e) => setGuests(parseInt(e.target.value))}
-            className="w-full border rounded p-2"
+            className="w-full border rounded p-2 mt-1"
           />
         </div>
 
@@ -205,10 +368,10 @@ export default function PropertyBookingModal({
 
         <button
           onClick={handleAddToCart}
-          disabled={checkingAvailability}
+          disabled={!checkIn || !checkOut || nights <= 0}
           className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50"
         >
-          {checkingAvailability ? 'Checking availability...' : 'Continue to Checkout'}
+          Continue to Checkout
         </button>
       </div>
     </div>
