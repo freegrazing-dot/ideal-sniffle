@@ -72,15 +72,41 @@ async function handleCheckout() {
   setIsLoading(true);
 
   try {
-    setError('Payment step is not wired in this CheckoutModal yet.');
-  } catch (err) {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items,
+          customerEmail,
+          customerName,
+          lodgingTax,
+          salesTax,
+          promoCode,
+          promoDiscount,
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Payment failed');
+    }
+
+    // 🚀 THIS IS THE KEY
+    window.location.href = data.url;
+
+  } catch (err: any) {
     console.error('Checkout error:', err);
-    setError('Checkout failed. Please try again.');
-  } finally {
+    setError(err.message || 'Checkout failed');
     setIsLoading(false);
   }
-}
-  return (
+}  return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
       <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
 
