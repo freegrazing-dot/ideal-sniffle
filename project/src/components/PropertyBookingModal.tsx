@@ -10,13 +10,22 @@ interface PropertyBookingModalProps {
   onClose: () => void
 }
 
+type BlockedSource = 'tkac' | 'airbnb' | 'vrbo' | 'booking' | 'external'
+
+interface BlockedDateInfo {
+  date: string
+  source: BlockedSource
+}
+
+const MIN_NIGHTS = 2
+
 export default function PropertyBookingModal({ property, onClose }: PropertyBookingModalProps) {
   const { addItem } = useCart()
 
   const [checkIn, setCheckIn] = useState('')
   const [checkOut, setCheckOut] = useState('')
   const [guests, setGuests] = useState(1)
-  const [blockedDates, setBlockedDates] = useState<string[]>([])
+  const [blockedDates, setBlockedDates] = useState<BlockedDateInfo[]>([])
   const [calendarMonth, setCalendarMonth] = useState(new Date())
   const [availabilityError, setAvailabilityError] = useState('')
   const [loadingBlockedDates, setLoadingBlockedDates] = useState(false)
@@ -30,6 +39,12 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
     setAvailabilityError('')
     setCalendarMonth(new Date())
     loadBlockedDates()
+
+    const refreshTimer = window.setInterval(() => {
+      loadBlockedDates()
+    }, 60000)
+
+    return () => window.clearInterval(refreshTimer)
   }, [property])
 
   if (!property) return null
@@ -41,13 +56,24 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
     return `${year}-${month}-${day}`
   }
 
-  const expandDates = (start: string, end: string) => {
-    const dates: string[] = []
+  const normalizeSource = (source?: string): BlockedSource => {
+    const s = (source || '').toLowerCase()
+    if (s.includes('airbnb')) return 'airbnb'
+    if (s.includes('vrbo')) return 'vrbo'
+    if (s.includes('booking')) return 'booking'
+    return 'external'
+  }
+
+  const expandDates = (start: string, end: string, source: BlockedSource) => {
+    const dates: BlockedDateInfo[] = []
     const current = new Date(`${start}T00:00:00`)
     const last = new Date(`${end}T00:00:00`)
 
     while (current < last) {
-      dates.push(toDateString(current))
+      dates.push({
+        date: toDateString(current),
+        source,
+      })
       current.setDate(current.getDate() + 1)
     }
 
@@ -69,22 +95,26 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
 
       const { data: external, error: externalError } = await supabase
         .from('external_calendar_events')
-        .select('start_date, end_date')
+        .select('start_date, end_date, source')
         .eq('property_id', property.id)
 
       if (externalError) throw externalError
 
-      const blocked: string[] = []
+      const blocked: BlockedDateInfo[] = []
 
       internal?.forEach((booking) => {
-        blocked.push(...expandDates(booking.check_in_date, booking.check_out_date))
+        blocked.push(...expandDates(booking.check_in_date, booking.check_out_date, 'tkac'))
       })
 
       external?.forEach((event) => {
-        blocked.push(...expandDates(event.start_date, event.end_date))
+        blocked.push(...expandDates(event.start_date, event.end_date, normalizeSource(event.source)))
       })
 
-      setBlockedDates([...new Set(blocked)])
+      const deduped = Array.from(
+        new Map(blocked.map((item) => [item.date, item])).values()
+      )
+
+      setBlockedDates(deduped)
     } catch (error) {
       console.error('Error loading blocked dates:', error)
       setAvailabilityError('Could not load availability. Please try again.')
@@ -99,23 +129,48 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
     return new Date(`${dateStr}T00:00:00`) < today
   }
 
+  const getBlockedInfo = (dateStr: string) => {
+    return blockedDates.find((item) => item.date === dateStr)
+  }
+
   const isBlocked = (dateStr: string) => {
-    return blockedDates.includes(dateStr)
+    return !!getBlockedInfo(dateStr)
   }
 
   const rangeHasBlockedDate = (start: string, end: string) => {
-    const range = expandDates(start, end)
-    return range.some((date) => isBlocked(date) || isPastDate(date))
+    const current = new Date(`${start}T00:00:00`)
+    const last = new Date(`${end}T00:00:00`)
+
+    while (current < last) {
+      const dateStr = toDateString(current)
+      if (isBlocked(dateStr) || isPastDate(dateStr)) return true
+      current.setDate(current.getDate() + 1)
+    }
+
+    return false
+  }
+
+  const getNightsBetween = (start: string, end: string) => {
+    return Math.max(
+      0,
+      Math.ceil(
+        (new Date(`${end}T00:00:00`).getTime() -
+          new Date(`${start}T00:00:00`).getTime()) /
+          (1000 * 60 * 60 * 24)
+      )
+    )
   }
 
   const handleDateClick = (dateStr: string) => {
+    const blockedInfo = getBlockedInfo(dateStr)
+
     if (isPastDate(dateStr)) {
       setAvailabilityError('You cannot select a past date.')
       return
     }
 
-    if (isBlocked(dateStr)) {
-      setAvailabilityError('That date is already booked.')
+    if (blockedInfo) {
+      setAvailabilityError(`That date is already booked by ${blockedInfo.source.toUpperCase()}.`)
       return
     }
 
@@ -133,6 +188,13 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
       return
     }
 
+    const selectedNights = getNightsBetween(checkIn, dateStr)
+
+    if (selectedNights < MIN_NIGHTS) {
+      setAvailabilityError(`Minimum stay is ${MIN_NIGHTS} nights.`)
+      return
+    }
+
     if (rangeHasBlockedDate(checkIn, dateStr)) {
       setAvailabilityError('That date range includes unavailable dates.')
       return
@@ -141,17 +203,7 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
     setCheckOut(dateStr)
   }
 
-  const nights =
-    checkIn && checkOut
-      ? Math.max(
-          0,
-          Math.ceil(
-            (new Date(`${checkOut}T00:00:00`).getTime() -
-              new Date(`${checkIn}T00:00:00`).getTime()) /
-              (1000 * 60 * 60 * 24)
-          )
-        )
-      : 0
+  const nights = checkIn && checkOut ? getNightsBetween(checkIn, checkOut) : 0
 
   const cleaningFee = property.cleaning_fee || 150
   const subtotal = nights * property.price_per_night + cleaningFee
@@ -162,6 +214,11 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
   function handleAddToCart() {
     if (!checkIn || !checkOut || nights <= 0) {
       setAvailabilityError('Please select a valid check-in and check-out date.')
+      return
+    }
+
+    if (nights < MIN_NIGHTS) {
+      setAvailabilityError(`Minimum stay is ${MIN_NIGHTS} nights.`)
       return
     }
 
@@ -202,25 +259,64 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
     return days
   }
 
+  const getBlockedClassName = (source: BlockedSource) => {
+    switch (source) {
+      case 'tkac':
+        return 'bg-green-200 text-green-900 border-green-300 line-through cursor-not-allowed'
+      case 'airbnb':
+        return 'bg-pink-200 text-pink-900 border-pink-300 line-through cursor-not-allowed'
+      case 'vrbo':
+        return 'bg-purple-200 text-purple-900 border-purple-300 line-through cursor-not-allowed'
+      case 'booking':
+        return 'bg-yellow-200 text-yellow-900 border-yellow-300 line-through cursor-not-allowed'
+      default:
+        return 'bg-gray-200 text-gray-500 border-gray-300 line-through cursor-not-allowed'
+    }
+  }
+
   const getDayClassName = (date: Date) => {
     const dateStr = toDateString(date)
-    const unavailable = isPastDate(dateStr) || isBlocked(dateStr)
+    const blockedInfo = getBlockedInfo(dateStr)
+    const unavailable = isPastDate(dateStr) || !!blockedInfo
     const selected = dateStr === checkIn || dateStr === checkOut
     const inRange = checkIn && checkOut && dateStr > checkIn && dateStr < checkOut
 
-    if (unavailable) {
-      return 'bg-gray-200 text-gray-400 line-through cursor-not-allowed'
+    if (blockedInfo) {
+      return getBlockedClassName(blockedInfo.source)
+    }
+
+    if (isPastDate(dateStr)) {
+      return 'bg-gray-100 text-gray-400 border-gray-200 line-through cursor-not-allowed'
     }
 
     if (selected) {
-      return 'bg-blue-600 text-white cursor-pointer'
+      return 'bg-blue-600 text-white border-blue-600 cursor-pointer'
     }
 
     if (inRange) {
-      return 'bg-blue-100 text-blue-800 cursor-pointer'
+      return 'bg-blue-100 text-blue-800 border-blue-200 cursor-pointer'
     }
 
-    return 'bg-white hover:bg-blue-50 text-gray-900 cursor-pointer'
+    if (unavailable) {
+      return 'bg-gray-200 text-gray-400 border-gray-300 line-through cursor-not-allowed'
+    }
+
+    return 'bg-white hover:bg-blue-50 text-gray-900 border-gray-200 cursor-pointer'
+  }
+
+  const getSourceLabel = (source: BlockedSource) => {
+    switch (source) {
+      case 'tkac':
+        return 'TKAC'
+      case 'airbnb':
+        return 'Airbnb'
+      case 'vrbo':
+        return 'VRBO'
+      case 'booking':
+        return 'Booking.com'
+      default:
+        return 'Unavailable'
+    }
   }
 
   return (
@@ -231,6 +327,10 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
           <button onClick={onClose}>
             <X />
           </button>
+        </div>
+
+        <div className="text-sm text-gray-600">
+          Select check-in first, then check-out. Minimum stay is {MIN_NIGHTS} nights.
         </div>
 
         <div className="flex items-center justify-between border rounded-lg p-3">
@@ -278,6 +378,7 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
               if (!day) return <div key={`empty-${index}`} />
 
               const dateStr = toDateString(day)
+              const blockedInfo = getBlockedInfo(dateStr)
 
               return (
                 <button
@@ -285,16 +386,22 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
                   type="button"
                   onClick={() => handleDateClick(dateStr)}
                   disabled={isPastDate(dateStr) || isBlocked(dateStr)}
-                  className={`h-11 rounded-lg text-sm font-medium transition ${getDayClassName(day)}`}
+                  title={blockedInfo ? getSourceLabel(blockedInfo.source) : dateStr}
+                  className={`h-12 rounded-lg text-sm font-medium border transition ${getDayClassName(day)}`}
                 >
-                  {day.getDate()}
+                  <div>{day.getDate()}</div>
+                  {blockedInfo && (
+                    <div className="text-[9px] leading-none mt-0.5">
+                      {getSourceLabel(blockedInfo.source)}
+                    </div>
+                  )}
                 </button>
               )
             })
           )}
         </div>
 
-        <div className="flex flex-wrap gap-4 text-sm border-t pt-3">
+        <div className="flex flex-wrap gap-3 text-sm border-t pt-3">
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-blue-600" />
             <span>Selected</span>
@@ -304,8 +411,20 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
             <span>Selected range</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-gray-200 border" />
-            <span>Unavailable</span>
+            <div className="w-4 h-4 rounded bg-green-200 border border-green-300" />
+            <span>TKAC</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-pink-200 border border-pink-300" />
+            <span>Airbnb</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-purple-200 border border-purple-300" />
+            <span>VRBO</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-yellow-200 border border-yellow-300" />
+            <span>Booking.com</span>
           </div>
         </div>
 
@@ -368,7 +487,7 @@ export default function PropertyBookingModal({ property, onClose }: PropertyBook
 
         <button
           onClick={handleAddToCart}
-          disabled={!checkIn || !checkOut || nights <= 0}
+          disabled={!checkIn || !checkOut || nights < MIN_NIGHTS}
           className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold disabled:opacity-50"
         >
           Continue to Checkout
