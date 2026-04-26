@@ -61,17 +61,25 @@ export default function CheckoutModal({
       ? discountedSubtotal + adjustedSalesTax + adjustedLodgingTax
       : totalAmount;
 
-  async function handleCheckout() {
-    setError('');
+async function handleCheckout() {
+  setError('');
 
-    if (!customerName || !customerEmail) {
-      setError('Please enter name and email');
-      return;
-    }
-
-    setIsLoading(true);
+  if (!customerName || !customerEmail) {
+    setError('Please enter name and email');
+    return;
   }
 
+  setIsLoading(true);
+
+  try {
+    setError('Payment step is not wired in this CheckoutModal yet.');
+  } catch (err) {
+    console.error('Checkout error:', err);
+    setError('Checkout failed. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+}
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
       <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
