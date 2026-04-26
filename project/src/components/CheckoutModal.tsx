@@ -61,6 +61,7 @@ export default function CheckoutModal({
       ? discountedSubtotal + adjustedSalesTax + adjustedLodgingTax
       : totalAmount;
 
+<<<<<<< HEAD
 async function handleCheckout() {
   setError('');
 
@@ -97,6 +98,18 @@ async function handleCheckout() {
     if (!response.ok) {
       throw new Error(data.error || 'Payment failed');
     }
+=======
+  async function handleCheckout() {
+    setError('');
+
+    if (!customerName || !customerEmail) {
+      setError('Please enter name and email');
+      return;
+    }
+
+    setIsLoading(true);
+  }
+>>>>>>> 66155dd (Fix checkout and calendar admin updates)
 
     // 🚀 THIS IS THE KEY
     window.location.href = data.url;

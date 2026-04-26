@@ -1,8 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 interface ICalEvent {
@@ -15,9 +16,10 @@ interface ICalEvent {
 }
 
 function parseICalDate(dateStr: string): string {
-  const year = dateStr.substring(0, 4);
-  const month = dateStr.substring(4, 6);
-  const day = dateStr.substring(6, 8);
+  const clean = dateStr.replace(/\D/g, "");
+  const year = clean.substring(0, 4);
+  const month = clean.substring(4, 6);
+  const day = clean.substring(6, 8);
   return `${year}-${month}-${day}`;
 }
 
@@ -26,18 +28,18 @@ function parseICalFeed(icalText: string): ICalEvent[] {
   const lines = icalText.split(/\r?\n/);
 
   let currentEvent: Partial<ICalEvent> | null = null;
-  let currentField = '';
+  let currentField = "";
 
-  for (let i = 0; i < lines.length; i++) {
-    let line = lines[i].trim();
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
 
-    if (line.startsWith('BEGIN:VEVENT')) {
+    if (line.startsWith("BEGIN:VEVENT")) {
       currentEvent = {};
       continue;
     }
 
-    if (line.startsWith('END:VEVENT')) {
-      if (currentEvent && currentEvent.uid && currentEvent.dtstart && currentEvent.dtend) {
+    if (line.startsWith("END:VEVENT")) {
+      if (currentEvent?.uid && currentEvent?.dtstart && currentEvent?.dtend) {
         events.push(currentEvent as ICalEvent);
       }
       currentEvent = null;
@@ -46,42 +48,41 @@ function parseICalFeed(icalText: string): ICalEvent[] {
 
     if (!currentEvent) continue;
 
-    if (line.startsWith(' ') || line.startsWith('\t')) {
-      if (currentField && currentEvent) {
-        currentEvent[currentField as keyof ICalEvent] += line.trim();
+    if (line.startsWith(" ") || line.startsWith("\t")) {
+      if (currentField) {
+        const key = currentField as keyof ICalEvent;
+        currentEvent[key] = `${currentEvent[key] || ""}${line.trim()}` as never;
       }
       continue;
     }
 
-    const colonIndex = line.indexOf(':');
+    const colonIndex = line.indexOf(":");
     if (colonIndex === -1) continue;
 
     let field = line.substring(0, colonIndex);
     const value = line.substring(colonIndex + 1);
 
-    if (field.includes(';')) {
-      field = field.split(';')[0];
-    }
+    if (field.includes(";")) field = field.split(";")[0];
 
     currentField = field.toLowerCase();
 
     switch (currentField) {
-      case 'uid':
+      case "uid":
         currentEvent.uid = value;
         break;
-      case 'summary':
+      case "summary":
         currentEvent.summary = value;
         break;
-      case 'description':
+      case "description":
         currentEvent.description = value;
         break;
-      case 'dtstart':
-        currentEvent.dtstart = value.includes('T') ? value.split('T')[0] : value;
+      case "dtstart":
+        currentEvent.dtstart = value.includes("T") ? value.split("T")[0] : value;
         break;
-      case 'dtend':
-        currentEvent.dtend = value.includes('T') ? value.split('T')[0] : value;
+      case "dtend":
+        currentEvent.dtend = value.includes("T") ? value.split("T")[0] : value;
         break;
-      case 'status':
+      case "status":
         currentEvent.status = value.toLowerCase();
         break;
     }
@@ -91,29 +92,26 @@ function parseICalFeed(icalText: string): ICalEvent[] {
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
   try {
-    if (req.method === "OPTIONS") {
-      return new Response(null, {
-        status: 200,
-        headers: corsHeaders,
-      });
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error("Missing Supabase environment variables");
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Clean up expired pending bookings first
-    await supabase.rpc("cleanup_expired_bookings");
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const { data: calendarUrls, error: urlsError } = await supabase
       .from("external_calendar_urls")
       .select("*")
-      .eq("is_active", true);
+      .eq("active", true);
 
-    if (urlsError) {
-      throw new Error(`Failed to fetch calendar URLs: ${urlsError.message}`);
-    }
+    if (urlsError) throw urlsError;
 
     if (!calendarUrls || calendarUrls.length === 0) {
       return new Response(
@@ -121,28 +119,31 @@ Deno.serve(async (req: Request) => {
           success: true,
           message: "No active calendar URLs to sync",
           total_events_synced: 0,
-          properties_synced: 0
+          properties_synced: 0,
         }),
         {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         }
       );
     }
 
     let totalEventsSynced = 0;
-    const propertiesSynced = new Set();
+    const propertiesSynced = new Set<string>();
     const syncResults: any[] = [];
 
     for (const calendarUrl of calendarUrls) {
       try {
         const icalResponse = await fetch(calendarUrl.ical_url);
+
         if (!icalResponse.ok) {
           syncResults.push({
             property_id: calendarUrl.property_id,
             source: calendarUrl.source,
             success: false,
-            error: "Failed to fetch iCal feed"
+            error: "Failed to fetch iCal feed",
           });
           continue;
         }
@@ -156,19 +157,16 @@ Deno.serve(async (req: Request) => {
           .eq("property_id", calendarUrl.property_id)
           .eq("source", calendarUrl.source);
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayStr = today.toISOString().split('T')[0];
+        const todayStr = new Date().toISOString().split("T")[0];
 
         const eventsToInsert = events
-          .filter(event => {
-            const endDate = parseICalDate(event.dtend);
-            return endDate >= todayStr;
-          })
-          .map(event => ({
+          .filter((event) => parseICalDate(event.dtend) >= todayStr)
+          .map((event) => ({
             property_id: calendarUrl.property_id,
             source: calendarUrl.source,
-            external_id: event.uid || `${calendarUrl.source}-${Date.now()}-${Math.random()}`,
+            external_id:
+              event.uid ||
+              `${calendarUrl.source}-${Date.now()}-${Math.random()}`,
             start_date: parseICalDate(event.dtstart),
             end_date: parseICalDate(event.dtend),
             summary: event.summary || `${calendarUrl.source} Reservation`,
@@ -181,16 +179,7 @@ Deno.serve(async (req: Request) => {
             .from("external_calendar_events")
             .insert(eventsToInsert);
 
-          if (insertError) {
-            console.error(`Insert error for ${calendarUrl.source}:`, insertError);
-            syncResults.push({
-              property_id: calendarUrl.property_id,
-              source: calendarUrl.source,
-              success: false,
-              error: "Failed to save calendar events"
-            });
-            continue;
-          }
+          if (insertError) throw insertError;
         }
 
         await supabase
@@ -205,20 +194,19 @@ Deno.serve(async (req: Request) => {
 
         totalEventsSynced += eventsToInsert.length;
         propertiesSynced.add(calendarUrl.property_id);
+
         syncResults.push({
           property_id: calendarUrl.property_id,
           source: calendarUrl.source,
           success: true,
-          events_synced: eventsToInsert.length
+          events_synced: eventsToInsert.length,
         });
-
       } catch (error) {
-        console.error(`Sync error for ${calendarUrl.source}:`, error);
         syncResults.push({
           property_id: calendarUrl.property_id,
           source: calendarUrl.source,
           success: false,
-          error: error.message
+          error: error.message,
         });
       }
     }
@@ -229,24 +217,30 @@ Deno.serve(async (req: Request) => {
         total_events_synced: totalEventsSynced,
         properties_synced: propertiesSynced.size,
         results: syncResults,
-        message: `Successfully synced ${totalEventsSynced} events from ${syncResults.filter(r => r.success).length} calendar sources across ${propertiesSynced.size} properties`,
-        synced_at: new Date().toISOString()
+        message: `Successfully synced ${totalEventsSynced} events from ${
+          syncResults.filter((r) => r.success).length
+        } calendar sources across ${propertiesSynced.size} properties`,
+        synced_at: new Date().toISOString(),
       }),
       {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
       }
     );
   } catch (error) {
-    console.error("Sync error:", error);
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message || "Internal server error"
+        error: error.message || "Internal server error",
       }),
       {
         status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
       }
     );
   }
