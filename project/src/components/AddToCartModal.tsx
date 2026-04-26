@@ -54,7 +54,7 @@ export function AddToCartModal({ activity, isOpen, onClose, onSuccess }: AddToCa
         basePrice += 25;
       }
     } else {
-      basePrice = activity.base_price;
+      basePrice = Number(activity.price || 0);
     }
 
     return basePrice;
@@ -376,7 +376,7 @@ export function AddToCartModal({ activity, isOpen, onClose, onSuccess }: AddToCa
                   <div className="flex justify-between items-center text-lg text-gray-700">
                     <span>Rental Price</span>
                     <span className="font-semibold">
-                      ${(totalPrice - (damageProtection === 'insurance' ? 25 : 0)).toFixed(2)}
+                      ${Number((totalPrice || 0) - (damageProtection === 'insurance' ? 25 : 0)).toFixed(2)}
                     </span>
                   </div>
                   {damageProtection === 'insurance' && (
@@ -393,13 +393,13 @@ export function AddToCartModal({ activity, isOpen, onClose, onSuccess }: AddToCa
                   )}
                   <div className="pt-2 border-t border-cyan-300 flex justify-between items-center text-xl font-bold text-cyan-700">
                     <span>Total Price</span>
-                    <span>${totalPrice.toFixed(2)}</span>
+                    <span>${Number(totalPrice || 0).toFixed(2)}</span>
                   </div>
                 </div>
               ) : (
                 <div className="flex justify-between items-center text-xl font-bold text-cyan-700">
                   <span>Price</span>
-                  <span>${totalPrice.toFixed(2)}</span>
+                  <span>${Number(totalPrice || 0).toFixed(2)}</span>
                 </div>
               )}
             </div>

@@ -163,7 +163,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                         </div>
                         <div className="text-right">
                           <div className="text-xl font-bold text-cyan-700 mb-2">
-                            ${item.price.toFixed(2)}
+                            ${Number(item.price || 0).toFixed(2)}
                           </div>
                           <button
                             onClick={() => removeItem(item.id)}
@@ -206,13 +206,13 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
                         )}
                         <div className="pt-2 border-t border-cyan-300 flex justify-between items-center text-2xl font-bold text-cyan-700">
                           <span>Total Amount</span>
-                          <span>${totalPrice.toFixed(2)}</span>
+                          <span>${Number(totalPrice || 0).toFixed(2)}</span>
                         </div>
                       </div>
                     ) : (
                       <div className="flex justify-between items-center text-2xl font-bold text-cyan-700">
                         <span>Total Amount</span>
-                        <span>${totalPrice.toFixed(2)}</span>
+                        <span>${Number(totalPrice || 0).toFixed(2)}</span>
                       </div>
                     )}
                     <p className="text-xs text-gray-600 mt-4">
