@@ -6,18 +6,14 @@ const stripeSecret = Deno.env.get('STRIPE_SECRET_KEY');
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-console.log('[create-payment-intent] STRIPE_SECRET_KEY present:', !!stripeSecret);
-
-if (!stripeSecret) {
-  console.error('[create-payment-intent] STRIPE_SECRET_KEY is not configured');
-}
-
-const stripe = stripeSecret ? new Stripe(stripeSecret, {
-  appInfo: {
-    name: 'TKAC Adventures Cart',
-    version: '1.0.0',
-  },
-}) : null;
+const stripe = stripeSecret
+  ? new Stripe(stripeSecret, {
+      appInfo: {
+        name: 'TKAC Adventures Cart',
+        version: '1.0.0',
+      },
+    })
+  : null;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -28,22 +24,27 @@ const corsHeaders = {
 };
 
 interface CartItem {
-  type: 'activity' | 'property';
+  id?: string;
+  type: 'activity' | 'property' | 'merchandise' | 'security_deposit';
   activity?: {
     id: string;
-    name: string;
+    name?: string;
   };
   property?: {
     id: string;
-    name: string;
+    name?: string;
   };
+  merchandiseName?: string;
+  name?: string;
+  propertyName?: string;
+  quantity?: number;
   bookingDate?: string;
   bookingTime?: string;
   numPeople?: number;
   checkInDate?: string;
   checkOutDate?: string;
   guests?: number;
-  price: number;
+  price?: number;
   specialRequests?: string;
   phoneNumber?: string;
   damageProtection?: 'insurance' | 'hold';
@@ -60,17 +61,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (req.method !== 'POST') {
-      return new Response(
-        JSON.stringify({ error: 'Method not allowed' }),
-        {
-          status: 405,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+        status: 405,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     if (!stripe) {
-      console.error('[create-payment-intent] Stripe not initialized - missing secret key');
       return new Response(
         JSON.stringify({ error: 'Payment service not configured. Please contact support.' }),
         {
@@ -84,33 +81,30 @@ Deno.serve(async (req: Request) => {
       items,
       customerEmail,
       customerName,
-      lodgingTax,
-      salesTax,
+      lodgingTax = 0,
+      salesTax = 0,
       operatorDob,
       boatingSafetyCardUrl,
       acknowledgments,
       promoCode,
-      promoDiscount
+      promoDiscount,
     } = await req.json();
 
     if (!items || !Array.isArray(items) || items.length === 0) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid items' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid items' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const bookingIds: string[] = [];
 
-    for (const item of items) {
-      if (item.type === 'activity' && item.activity) {
+    for (const item of items as CartItem[]) {
+      if (item.type === 'activity' && item.activity?.id) {
         const expiresAt = new Date();
         expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
-        const { data: bookingData, error: bookingError } = await supabase
+        const { data, error } = await supabase
           .from('bookings')
           .insert({
             activity_id: item.activity.id,
@@ -120,7 +114,7 @@ Deno.serve(async (req: Request) => {
             booking_date: item.bookingDate || '',
             booking_time: item.bookingTime || '',
             num_people: item.numPeople || 1,
-            total_price: item.price,
+            total_price: Number(item.price || 0),
             special_requests: item.specialRequests || '',
             payment_status: 'pending',
             status: 'pending',
@@ -134,21 +128,26 @@ Deno.serve(async (req: Request) => {
           .select('id')
           .single();
 
-        if (bookingError) {
-          console.error('Activity booking creation error:', bookingError);
+        if (error) {
+          console.error('Activity booking creation error:', error);
           throw new Error('Failed to create activity booking');
         }
 
-        bookingIds.push(bookingData.id);
-      } else if (item.type === 'property' && item.property) {
+        bookingIds.push(data.id);
+      }
+
+      if (item.type === 'property' && item.property?.id) {
         const checkIn = new Date(item.checkInDate || '');
         const checkOut = new Date(item.checkOutDate || '');
-        const totalNights = Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)));
+        const totalNights = Math.max(
+          1,
+          Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24))
+        );
 
         const expiresAt = new Date();
         expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
-        const { data: rentalData, error: rentalError } = await supabase
+        const { data, error } = await supabase
           .from('rental_bookings')
           .insert({
             property_id: item.property.id,
@@ -159,7 +158,7 @@ Deno.serve(async (req: Request) => {
             check_out_date: item.checkOutDate || '',
             guests: Math.max(1, item.guests || 1),
             total_nights: totalNights,
-            total_price: item.price,
+            total_price: Number(item.price || 0),
             special_requests: item.specialRequests || '',
             payment_status: 'pending',
             status: 'pending',
@@ -168,103 +167,105 @@ Deno.serve(async (req: Request) => {
           .select('id')
           .single();
 
-        if (rentalError) {
-          console.error('Property booking creation error:', rentalError);
+        if (error) {
+          console.error('Property booking creation error:', error);
           throw new Error('Failed to create property booking');
         }
 
-        bookingIds.push(rentalData.id);
+        bookingIds.push(data.id);
       }
     }
 
-    const lineItems = items.map((item: CartItem) => {
-      let description = '';
-      let name = '';
+    const lineItems = (items as CartItem[])
+      .filter((item) => item.type !== 'security_deposit')
+      .map((item) => {
+        let name = 'TKAC Booking';
+        let description = 'TKAC checkout item';
 
-      if (item.type === 'activity' && item.activity) {
-        name = item.activity.name;
-        description = `${item.bookingDate} at ${item.bookingTime} - ${item.numPeople} ${item.numPeople === 1 ? 'person' : 'people'}`;
-      } else if (item.type === 'property' && item.property) {
-        name = item.property.name;
-        description = `${item.checkInDate} to ${item.checkOutDate} - ${item.guests} ${item.guests === 1 ? 'guest' : 'guests'}`;
-      }
+        if (item.type === 'activity') {
+          name = item.activity?.name || item.name || 'Activity Booking';
+          description = `${item.bookingDate || ''} ${item.bookingTime || ''} - ${item.numPeople || 1} people`;
+        }
 
-      return {
-        price_data: {
-          currency: 'usd',
-          product_data: {
-            name,
-            description,
+        if (item.type === 'property') {
+          name = item.property?.name || item.name || 'Property Rental';
+          description = `${item.checkInDate || ''} to ${item.checkOutDate || ''} - ${item.guests || 1} guests`;
+        }
+
+        if (item.type === 'merchandise') {
+          name = item.merchandiseName || item.name || 'Merchandise';
+          description = `Quantity: ${item.quantity || 1}`;
+        }
+
+        return {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name,
+              description,
+            },
+            unit_amount: Math.max(50, Math.round(Number(item.price || 0) * 100)),
           },
-          unit_amount: Math.round(item.price * 100),
-        },
-        quantity: 1,
-      };
-    });
+          quantity: item.type === 'merchandise' ? item.quantity || 1 : 1,
+        };
+      });
 
-    if (salesTax && salesTax > 0) {
+    if (Number(salesTax) > 0) {
       lineItems.push({
         price_data: {
           currency: 'usd',
           product_data: {
-            name: 'Sales Tax (6.5%)',
-            description: 'State sales tax',
+            name: 'Sales Tax',
+            description: 'Sales tax',
           },
-          unit_amount: Math.round(salesTax * 100),
+          unit_amount: Math.round(Number(salesTax) * 100),
         },
         quantity: 1,
       });
     }
 
-    if (lodgingTax && lodgingTax > 0) {
+    if (Number(lodgingTax) > 0) {
       lineItems.push({
         price_data: {
           currency: 'usd',
           product_data: {
-            name: 'Lodging Tax (11.5%)',
-            description: 'State lodging tax',
+            name: 'Lodging Tax',
+            description: 'Lodging tax',
           },
-          unit_amount: Math.round(lodgingTax * 100),
+          unit_amount: Math.round(Number(lodgingTax) * 100),
         },
         quantity: 1,
       });
     }
 
-    const hasPropertyRental = items.some((item: CartItem) => item.type === 'property');
-
-    const siteUrl = Deno.env.get('VITE_SITE_URL');
-    const origin = siteUrl || req.headers.get('origin') || req.headers.get('referer')?.replace(/\/$/, '') || 'http://localhost:5173';
-    console.log('[create-payment-intent] Site URL:', siteUrl, 'Using origin:', origin);
-
-    const hasActivityBooking = items.some((item: CartItem) => item.type === 'activity');
-    const bookingType = hasPropertyRental ? 'rental' : (hasActivityBooking ? 'activity' : 'activity');
+    const hasPropertyRental = (items as CartItem[]).some((item) => item.type === 'property');
+    const hasActivityBooking = (items as CartItem[]).some((item) => item.type === 'activity');
+    const bookingType = hasPropertyRental ? 'rental' : hasActivityBooking ? 'activity' : 'merch';
 
     let stripeCoupon = null;
-    console.log('[create-payment-intent] Promo code received:', { promoCode, promoDiscount });
 
-    if (promoCode && promoDiscount && promoDiscount > 0) {
-      try {
-        stripeCoupon = await stripe.coupons.create({
-          percent_off: promoDiscount,
-          duration: 'once',
-          name: `${promoCode} - ${promoDiscount}% off`,
-        });
-        console.log('[create-payment-intent] Created Stripe coupon:', stripeCoupon.id, 'with', promoDiscount, '% off');
-      } catch (err) {
-        console.error('[create-payment-intent] Failed to create Stripe coupon:', err);
-      }
-    } else {
-      console.log('[create-payment-intent] No promo code to apply');
+    if (promoCode && Number(promoDiscount) > 0) {
+      stripeCoupon = await stripe.coupons.create({
+        percent_off: Number(promoDiscount),
+        duration: 'once',
+        name: `${promoCode} - ${promoDiscount}% off`,
+      });
     }
 
-    const successUrl = promoCode
-      ? `${origin}/success?session_id={CHECKOUT_SESSION_ID}&promo=${encodeURIComponent(promoCode)}`
-      : `${origin}/success?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = promoCode
-      ? `${origin}?promo=${encodeURIComponent(promoCode)}`
-      : `${origin}`;
+    const siteUrl = Deno.env.get('VITE_SITE_URL');
+    const origin =
+      siteUrl ||
+      req.headers.get('origin') ||
+      req.headers.get('referer')?.replace(/\/$/, '') ||
+      'http://localhost:5173';
 
-    const sessionConfig: any = {
+    const successUrl = `${origin}/success?session_id={CHECKOUT_SESSION_ID}${
+      promoCode ? `&promo=${encodeURIComponent(promoCode)}` : ''
+    }`;
+
+    const cancelUrl = `${origin}${promoCode ? `?promo=${encodeURIComponent(promoCode)}` : ''}`;
+
+    const sessionConfig: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: ['card'],
       line_items: lineItems,
       mode: 'payment',
@@ -274,23 +275,17 @@ Deno.serve(async (req: Request) => {
       metadata: {
         booking_ids: bookingIds.join(','),
         booking_type: bookingType,
-        has_property_rental: hasPropertyRental.toString(),
+        has_property_rental: String(hasPropertyRental),
         promo_code: promoCode || '',
+        promo_discount: promoDiscount ? String(promoDiscount) : '',
       },
     };
 
     if (stripeCoupon) {
-      sessionConfig.discounts = [{
-        coupon: stripeCoupon.id,
-      }];
+      sessionConfig.discounts = [{ coupon: stripeCoupon.id }];
     }
 
     const session = await stripe.checkout.sessions.create(sessionConfig);
-
-    console.log('[create-payment-intent] Created session:', session.id, 'Success URL:', session.success_url);
-
-    // Note: Promo code usage is incremented in the webhook AFTER successful payment
-    // This prevents incrementing usage for abandoned checkouts
 
     let depositPaymentIntentId = null;
 
@@ -298,7 +293,7 @@ Deno.serve(async (req: Request) => {
       const paymentIntent = await stripe.paymentIntents.create({
         amount: 50000,
         currency: 'usd',
-        description: 'Security Deposit Authorization (Hold)',
+        description: 'Security Deposit Authorization Hold',
         capture_method: 'manual',
         metadata: {
           booking_ids: bookingIds.join(','),
@@ -308,10 +303,8 @@ Deno.serve(async (req: Request) => {
       });
 
       depositPaymentIntentId = paymentIntent.id;
-      console.log('[create-payment-intent] Created deposit authorization:', depositPaymentIntentId);
 
-      const rentalBookingIds = bookingIds.filter((_, index) => items[index].type === 'property');
-      for (const bookingId of rentalBookingIds) {
+      for (const bookingId of bookingIds) {
         await supabase
           .from('rental_bookings')
           .update({
@@ -335,12 +328,9 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error: any) {
     console.error('Payment intent error:', error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    return new Response(JSON.stringify({ error: error.message || 'Checkout failed' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 });
