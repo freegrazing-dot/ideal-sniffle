@@ -457,20 +457,38 @@ Deno.serve(async (req: Request) => {
       ? `Vacation Rental Confirmed - ${booking.property_name}`
       : `Adventure Confirmed - ${booking.activity_name}`;
 
-    console.log('Sending admin email to:', booking.admin_email);
-    const adminRes = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${resendApiKey}`,
-      },
-      body: JSON.stringify({
-        from: 'TKAC Vacations <bookings@tkacvacations.com>',
-        to: [booking.admin_email],
-        subject: emailSubject,
-        html: adminEmailHtml,
-      }),
-    });
+   // 🔥 Determine admin emails automatically
+let adminEmails: string[] = [];
+
+if (booking.booking_type === 'activity') {
+  adminEmails.push('tkacadventures@gmail.com');
+}
+
+if (booking.booking_type === 'rental') {
+  adminEmails.push('tkacvacations@gmail.com');
+}
+
+// 🔥 (future-proof: if you add merch type later)
+if ((booking as any).booking_type === 'merchandise') {
+  adminEmails.push('tkacvacations@gmail.com');
+}
+
+// 🔥 Send admin email
+console.log('Sending admin email to:', adminEmails);
+
+const adminRes = await fetch('https://api.resend.com/emails', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${resendApiKey}`,
+  },
+  body: JSON.stringify({
+    from: 'TKAC Vacations <bookings@tkacvacations.com>',
+    to: adminEmails,
+    subject: emailSubject,
+    html: adminEmailHtml,
+  }),
+});
 
     console.log('Sending customer email to:', booking.customer_email);
     const customerRes = await fetch('https://api.resend.com/emails', {

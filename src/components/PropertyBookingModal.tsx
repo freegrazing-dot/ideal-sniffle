@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { X, Calendar, Users, Phone, Mail, User } from 'lucide-react';
-import type { Property, RentalBooking } from '../types';
+import type { Property } from '../types';
 import { supabase } from '../lib/supabase';
 import { calculateRentalTaxes, formatCurrency } from '../lib/tax-calculations';
+import { useCart } from '../lib/cart-context';
 
 interface PropertyBookingModalProps {
   property: Property | null;
@@ -13,7 +14,10 @@ interface PropertyBookingModalProps {
 export default function PropertyBookingModal({
   property,
   onClose,
+  onSuccess,
 }: PropertyBookingModalProps) {
+  const { addPropertyItem } = useCart();
+
   const [formData, setFormData] = useState({
     customer_name: '',
     customer_email: '',
@@ -31,6 +35,7 @@ export default function PropertyBookingModal({
     if (property) {
       const today = new Date();
       today.setDate(today.getDate() + 1);
+
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -55,6 +60,7 @@ export default function PropertyBookingModal({
 
     const checkIn = new Date(formData.check_in_date);
     const checkOut = new Date(formData.check_out_date);
+
     const nights = Math.ceil(
       (checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)
     );
@@ -63,11 +69,14 @@ export default function PropertyBookingModal({
   };
 
   const totalNights = calculateNights();
-  const cleaningFee = property.cleaning_fee || 150;
-  const rentalSubtotal = totalNights * property.price_per_night + cleaningFee;
+  const cleaningFee = property.cleaning_fee || 190;
+  const roomTotal = totalNights * property.price_per_night;
+  const rentalSubtotal = roomTotal + cleaningFee;
   const taxes = calculateRentalTaxes(rentalSubtotal);
   const securityDeposit = 500;
-  const totalPrice = taxes.grandTotal + securityDeposit;
+
+  // Deposit is shown as a hold, not charged in Stripe total.
+  const checkoutTotal = taxes.grandTotal;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,18 +96,13 @@ export default function PropertyBookingModal({
     }
 
     try {
-      const checkIn = new Date(formData.check_in_date);
-      const checkOut = new Date(formData.check_out_date);
-      checkIn.setHours(0, 0, 0, 0);
-      checkOut.setHours(0, 0, 0, 0);
-
       const { data: existingBookings, error: checkError } = await supabase
         .from('rental_bookings')
         .select('id')
         .eq('property_id', property.id)
-        .in('status', ['pending', 'confirmed'])
+        .in('status', ['confirmed'])
         .or(
-          `and(check_in_date.lte.${formData.check_out_date},check_out_date.gte.${formData.check_in_date})`
+          `and(check_in_date.lt.${formData.check_out_date},check_out_date.gt.${formData.check_in_date})`
         );
 
       if (checkError) throw checkError;
@@ -125,60 +129,21 @@ export default function PropertyBookingModal({
         return;
       }
 
-      const booking: RentalBooking = {
-        property_id: property.id,
-        customer_name: formData.customer_name,
-        customer_email: formData.customer_email,
-        customer_phone: formData.customer_phone || '',
-        check_in_date: formData.check_in_date,
-        check_out_date: formData.check_out_date,
+      await addPropertyItem({
+        property,
+        checkInDate: formData.check_in_date,
+        checkOutDate: formData.check_out_date,
         guests: formData.guests,
-        total_nights: totalNights,
-        total_price: totalPrice,
-        subtotal: taxes.subtotal,
-        sales_tax: taxes.salesTax,
-        lodging_tax: taxes.lodgingTax,
-        tax_total: taxes.taxTotal,
-        special_requests: formData.special_requests,
-        status: 'pending',
-        payment_status: 'pending',
-      };
+        specialRequests: formData.special_requests,
+        phoneNumber: formData.customer_phone,
+        price: rentalSubtotal,
+      });
 
-      const { data, error: insertError } = await supabase
-        .from('rental_bookings')
-        .insert(booking)
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/booking-checkout`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({
-            bookingId: data.id,
-            bookingType: 'rental',
-            customerEmail: formData.customer_email,
-            amount: totalPrice,
-            description: `${property.name} - ${totalNights} nights`,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Failed to create checkout session');
-      }
-
-      const { sessionUrl } = await response.json();
-      window.location.href = sessionUrl;
+      onSuccess();
+      onClose();
     } catch (err) {
-      console.error('Booking error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create booking');
+      console.error('Rental add-to-cart error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to add rental to cart');
       setLoading(false);
     }
   };
@@ -208,9 +173,9 @@ export default function PropertyBookingModal({
                   $500 Refundable Security Deposit Required
                 </h3>
                 <p className="text-yellow-800 text-sm leading-relaxed">
-                  A $500 security deposit is required for all vacation rental bookings. This
-                  deposit will be collected separately and fully refunded within 7 days after
-                  checkout, provided there is no damage to the property.
+                  A $500 security deposit hold may be required for vacation rental bookings.
+                  This is separate from the rental payment and is refundable after checkout,
+                  provided there is no damage to the property.
                 </p>
               </div>
             </div>
@@ -219,7 +184,9 @@ export default function PropertyBookingModal({
           <div className="bg-blue-50 p-4 rounded-lg">
             <div className="flex justify-between items-center mb-2">
               <span className="text-gray-700">Price per night:</span>
-              <span className="text-xl font-bold text-gray-900">${property.price_per_night}</span>
+              <span className="text-xl font-bold text-gray-900">
+                {formatCurrency(property.price_per_night)}
+              </span>
             </div>
 
             {totalNights > 0 && (
@@ -232,7 +199,7 @@ export default function PropertyBookingModal({
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-gray-700">Room total:</span>
                   <span className="font-semibold text-gray-900">
-                    {formatCurrency(totalNights * property.price_per_night)}
+                    {formatCurrency(roomTotal)}
                   </span>
                 </div>
 
@@ -253,33 +220,35 @@ export default function PropertyBookingModal({
                 <div className="mb-2 pb-2 border-b border-blue-200"></div>
 
                 <div className="flex justify-between items-center mb-1 text-sm">
-                  <span className="text-gray-600">Sales tax (6.5%):</span>
+                  <span className="text-gray-600">Sales tax:</span>
                   <span className="text-gray-900">{formatCurrency(taxes.salesTax)}</span>
                 </div>
 
                 <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200 text-sm">
-                  <span className="text-gray-600">Lodging tax (5%):</span>
+                  <span className="text-gray-600">Lodging tax:</span>
                   <span className="text-gray-900">{formatCurrency(taxes.lodgingTax)}</span>
                 </div>
 
                 <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                  <span className="text-gray-700 font-medium">Total with taxes:</span>
+                  <span className="text-gray-700 font-medium">Total due now:</span>
                   <span className="font-semibold text-gray-900">
-                    {formatCurrency(taxes.grandTotal)}
+                    {formatCurrency(checkoutTotal)}
                   </span>
                 </div>
 
                 <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
                   <span className="text-yellow-700 font-medium">
-                    Security deposit (refundable):
+                    Security deposit hold:
                   </span>
-                  <span className="font-semibold text-yellow-700">$500.00</span>
+                  <span className="font-semibold text-yellow-700">
+                    {formatCurrency(securityDeposit)}
+                  </span>
                 </div>
 
                 <div className="flex justify-between items-center pt-2">
-                  <span className="text-lg font-semibold text-gray-900">Total:</span>
+                  <span className="text-lg font-semibold text-gray-900">Checkout total:</span>
                   <span className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(totalPrice)}
+                    {formatCurrency(checkoutTotal)}
                   </span>
                 </div>
               </>
@@ -385,7 +354,7 @@ export default function PropertyBookingModal({
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <Phone className="w-4 h-4 inline mr-2" />
-                Phone (Optional)
+                Phone
               </label>
               <input
                 type="tel"
@@ -401,7 +370,7 @@ export default function PropertyBookingModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Special Requests (Optional)
+              Special Requests
             </label>
             <textarea
               rows={3}
@@ -423,11 +392,6 @@ export default function PropertyBookingModal({
               <li>Parties and events require prior approval</li>
               <li>All guests must be registered prior to arrival</li>
             </ul>
-            <p className="pt-2 border-t border-gray-300 mt-3">
-              By proceeding with this booking, you agree to our rental terms and conditions,
-              including the security deposit policy. You will be contacted separately for the
-              security deposit collection.
-            </p>
           </div>
 
           <button
@@ -435,7 +399,7 @@ export default function PropertyBookingModal({
             disabled={loading || totalNights <= 0}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            {loading ? 'Processing...' : `Proceed to Payment - $${totalPrice.toFixed(2)}`}
+            {loading ? 'Adding to Cart...' : `Add Rental to Cart - ${formatCurrency(checkoutTotal)}`}
           </button>
         </form>
       </div>
