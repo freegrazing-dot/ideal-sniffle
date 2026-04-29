@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Calendar, Users, Phone, Mail, User } from 'lucide-react';
 import type { Property } from '../types';
 import { supabase } from '../lib/supabase';
@@ -32,25 +32,25 @@ export default function PropertyBookingModal({
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (property) {
-      const today = new Date();
-      today.setDate(today.getDate() + 1);
+    if (!property) return;
 
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+    const today = new Date();
+    today.setDate(today.getDate() + 1);
 
-      setFormData({
-        customer_name: '',
-        customer_email: '',
-        customer_phone: '',
-        check_in_date: today.toISOString().split('T')[0],
-        check_out_date: tomorrow.toISOString().split('T')[0],
-        guests: 1,
-        special_requests: '',
-      });
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-      setError('');
-    }
+    setFormData({
+      customer_name: '',
+      customer_email: '',
+      customer_phone: '',
+      check_in_date: today.toISOString().split('T')[0],
+      check_out_date: tomorrow.toISOString().split('T')[0],
+      guests: 1,
+      special_requests: '',
+    });
+
+    setError('');
   }, [property]);
 
   if (!property) return null;
@@ -69,13 +69,12 @@ export default function PropertyBookingModal({
   };
 
   const totalNights = calculateNights();
-  const cleaningFee = property.cleaning_fee || 190;
-  const roomTotal = totalNights * property.price_per_night;
+  const nightlyRate = Number(property.price_per_night || 0);
+  const cleaningFee = Number(property.cleaning_fee ?? 190);
+  const roomTotal = totalNights * nightlyRate;
   const rentalSubtotal = roomTotal + cleaningFee;
   const taxes = calculateRentalTaxes(rentalSubtotal);
   const securityDeposit = 500;
-
-  // Deposit is shown as a hold, not charged in Stripe total.
   const checkoutTotal = taxes.grandTotal;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -115,7 +114,7 @@ export default function PropertyBookingModal({
 
       const { data: externalEvents, error: externalError } = await supabase
         .from('external_calendar_events')
-        .select('id, start_date, end_date')
+        .select('id')
         .eq('property_id', property.id)
         .or(
           `and(start_date.lt.${formData.check_out_date},end_date.gt.${formData.check_in_date})`
@@ -164,95 +163,59 @@ export default function PropertyBookingModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           <div className="bg-yellow-50 border-2 border-yellow-400 p-4 rounded-lg mb-4">
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center text-yellow-900 font-bold text-lg">
-                $
-              </div>
-              <div className="flex-1">
-                <h3 className="font-bold text-yellow-900 text-lg mb-1">
-                  $500 Refundable Security Deposit Required
-                </h3>
-                <p className="text-yellow-800 text-sm leading-relaxed">
-                  A $500 security deposit hold may be required for vacation rental bookings.
-                  This is separate from the rental payment and is refundable after checkout,
-                  provided there is no damage to the property.
-                </p>
-              </div>
-            </div>
+            <h3 className="font-bold text-yellow-900 text-lg mb-1">
+              $500 Refundable Security Deposit Required
+            </h3>
+            <p className="text-yellow-800 text-sm">
+              The security deposit is a hold and is not included in the Stripe charge total.
+            </p>
           </div>
 
           <div className="bg-blue-50 p-4 rounded-lg">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-gray-700">Price per night:</span>
-              <span className="text-xl font-bold text-gray-900">
-                {formatCurrency(property.price_per_night)}
-              </span>
+            <div className="flex justify-between mb-2">
+              <span>Price per night:</span>
+              <strong>{formatCurrency(nightlyRate)}</strong>
             </div>
 
-            {totalNights > 0 && (
-              <>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700">Number of nights:</span>
-                  <span className="font-semibold text-gray-900">{totalNights}</span>
-                </div>
+            <div className="flex justify-between mb-2">
+              <span>Number of nights:</span>
+              <strong>{totalNights}</strong>
+            </div>
 
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700">Room total:</span>
-                  <span className="font-semibold text-gray-900">
-                    {formatCurrency(roomTotal)}
-                  </span>
-                </div>
+            <div className="flex justify-between mb-2">
+              <span>Room total:</span>
+              <strong>{formatCurrency(roomTotal)}</strong>
+            </div>
 
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700">Cleaning fee:</span>
-                  <span className="font-semibold text-gray-900">
-                    {formatCurrency(cleaningFee)}
-                  </span>
-                </div>
+            <div className="flex justify-between mb-2">
+              <span>Cleaning fee:</span>
+              <strong>{formatCurrency(cleaningFee)}</strong>
+            </div>
 
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-gray-700 font-medium">Subtotal:</span>
-                  <span className="font-semibold text-gray-900">
-                    {formatCurrency(rentalSubtotal)}
-                  </span>
-                </div>
+            <div className="flex justify-between mb-2 border-t pt-2">
+              <span>Subtotal:</span>
+              <strong>{formatCurrency(rentalSubtotal)}</strong>
+            </div>
 
-                <div className="mb-2 pb-2 border-b border-blue-200"></div>
+            <div className="flex justify-between text-sm mb-1">
+              <span>Sales tax:</span>
+              <span>{formatCurrency(taxes.salesTax)}</span>
+            </div>
 
-                <div className="flex justify-between items-center mb-1 text-sm">
-                  <span className="text-gray-600">Sales tax:</span>
-                  <span className="text-gray-900">{formatCurrency(taxes.salesTax)}</span>
-                </div>
+            <div className="flex justify-between text-sm mb-2">
+              <span>Lodging tax:</span>
+              <span>{formatCurrency(taxes.lodgingTax)}</span>
+            </div>
 
-                <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200 text-sm">
-                  <span className="text-gray-600">Lodging tax:</span>
-                  <span className="text-gray-900">{formatCurrency(taxes.lodgingTax)}</span>
-                </div>
+            <div className="flex justify-between border-t pt-2">
+              <span className="font-semibold">Total due now:</span>
+              <strong className="text-blue-600">{formatCurrency(checkoutTotal)}</strong>
+            </div>
 
-                <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                  <span className="text-gray-700 font-medium">Total due now:</span>
-                  <span className="font-semibold text-gray-900">
-                    {formatCurrency(checkoutTotal)}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center mb-2 pb-2 border-b border-blue-200">
-                  <span className="text-yellow-700 font-medium">
-                    Security deposit hold:
-                  </span>
-                  <span className="font-semibold text-yellow-700">
-                    {formatCurrency(securityDeposit)}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center pt-2">
-                  <span className="text-lg font-semibold text-gray-900">Checkout total:</span>
-                  <span className="text-2xl font-bold text-blue-600">
-                    {formatCurrency(checkoutTotal)}
-                  </span>
-                </div>
-              </>
-            )}
+            <div className="flex justify-between text-yellow-700 mt-2">
+              <span>Security deposit hold:</span>
+              <strong>{formatCurrency(securityDeposit)}</strong>
+            </div>
           </div>
 
           {error && (
@@ -263,7 +226,7 @@ export default function PropertyBookingModal({
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 <Calendar className="w-4 h-4 inline mr-2" />
                 Check-in Date
               </label>
@@ -275,12 +238,12 @@ export default function PropertyBookingModal({
                 onChange={(e) =>
                   setFormData({ ...formData, check_in_date: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 <Calendar className="w-4 h-4 inline mr-2" />
                 Check-out Date
               </label>
@@ -292,15 +255,15 @@ export default function PropertyBookingModal({
                 onChange={(e) =>
                   setFormData({ ...formData, check_out_date: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium mb-2">
               <Users className="w-4 h-4 inline mr-2" />
-              Number of Guests
+              Guests
             </label>
             <input
               type="number"
@@ -311,13 +274,12 @@ export default function PropertyBookingModal({
               onChange={(e) =>
                 setFormData({ ...formData, guests: parseInt(e.target.value, 10) || 1 })
               }
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-2 border rounded-lg"
             />
-            <p className="text-sm text-gray-500 mt-1">Maximum {property.max_guests} guests</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium mb-2">
               <User className="w-4 h-4 inline mr-2" />
               Full Name
             </label>
@@ -328,14 +290,13 @@ export default function PropertyBookingModal({
               onChange={(e) =>
                 setFormData({ ...formData, customer_name: e.target.value })
               }
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="John Doe"
+              className="w-full px-4 py-2 border rounded-lg"
             />
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 <Mail className="w-4 h-4 inline mr-2" />
                 Email
               </label>
@@ -346,13 +307,12 @@ export default function PropertyBookingModal({
                 onChange={(e) =>
                   setFormData({ ...formData, customer_email: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="john@example.com"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2">
                 <Phone className="w-4 h-4 inline mr-2" />
                 Phone
               </label>
@@ -362,42 +322,27 @@ export default function PropertyBookingModal({
                 onChange={(e) =>
                   setFormData({ ...formData, customer_phone: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="(555) 123-4567"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Special Requests
-            </label>
+            <label className="block text-sm font-medium mb-2">Special Requests</label>
             <textarea
               rows={3}
               value={formData.special_requests}
               onChange={(e) =>
                 setFormData({ ...formData, special_requests: e.target.value })
               }
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Any special requests or requirements..."
+              className="w-full px-4 py-2 border rounded-lg"
             />
-          </div>
-
-          <div className="bg-gray-50 border border-gray-200 p-4 rounded-lg text-xs text-gray-600 space-y-2">
-            <p className="font-semibold text-gray-800">Important Information:</p>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Check-in time is 4:00 PM, check-out time is 11:00 AM</li>
-              <li>No smoking allowed inside the property</li>
-              <li>Quiet hours are from 10:00 PM to 8:00 AM</li>
-              <li>Parties and events require prior approval</li>
-              <li>All guests must be registered prior to arrival</li>
-            </ul>
           </div>
 
           <button
             type="submit"
             disabled={loading || totalNights <= 0}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400"
           >
             {loading ? 'Adding to Cart...' : `Add Rental to Cart - ${formatCurrency(checkoutTotal)}`}
           </button>
