@@ -100,6 +100,7 @@ Deno.serve(async (req: Request) => {
         name = `TKAC Item ${index + 1}`;
       }
 
+<<<<<<< HEAD
     const safeName =
   name && name.trim() !== ''
     ? name
@@ -126,6 +127,21 @@ return {
   },
   quantity: item.quantity || 1,
 };
+=======
+      const price = safePrice(item.price, index);
+
+      return {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name,
+            description: description || 'TKAC purchase',
+          },
+          unit_amount: Math.round(price * 100),
+        },
+        quantity: item.quantity || 1,
+      };
+>>>>>>> 8f7d3dd (Fix active project build and cart modal export)
     });
 
     if (salesTax > 0) {
