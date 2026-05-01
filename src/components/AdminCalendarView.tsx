@@ -84,8 +84,9 @@ export function AdminCalendarView() {
       const dayBookings = bookings.filter((b) => b.booking_date === dateStr);
       const dayExceptions = exceptions.filter((e) => e.exception_date === dateStr);
 
-      const isBlocked = dayExceptions.some((e) => !e.start_time && !e.end_time);
-
+      const isBlocked = (Array.isArray(dayExceptions) ? dayExceptions : []).some(
+  (e) => !e.start_time && !e.end_time
+);
       dataMap.set(dateStr, {
         date,
         bookings: dayBookings,
