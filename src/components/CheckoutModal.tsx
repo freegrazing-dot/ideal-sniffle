@@ -1,137 +1,211 @@
 import { useState } from 'react';
+import { X, Loader2 } from 'lucide-react';
+import type { CartItem } from '../lib/cart-context';
 
-type Props = {
+interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  items?: any[];
-  totalAmount?: number;
-};
+  items?: CartItem[];
+  totalAmount: number;
+  subtotal: number;
+  lodgingTax: number;
+  salesTax: number;
+  depositAmount: number;
+  promoCode?: string;
+  promoDiscount?: number;
+  onSuccess: () => void;
+  onPromoChange?: (code: string, discount: number) => void;
+}
 
 export default function CheckoutModal({
   isOpen,
   onClose,
-  items,
+  items = [],
   totalAmount,
-}: Props) {
+  subtotal,
+  lodgingTax,
+  salesTax,
+  depositAmount,
+  promoDiscount: initialPromoDiscount = 0,
+}: CheckoutModalProps) {
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [promoCode, setPromoCode] = useState('');
+  const [promoDiscount] = useState(initialPromoDiscount);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
   if (!isOpen) return null;
 
-  // 🛡️ ALWAYS SAFE
   const safeItems = Array.isArray(items) ? items : [];
 
-  const subtotal = Number(totalAmount || 0);
+  const hasProperties = safeItems.some((item) => item.type === 'property');
+  const isDepositOnly =
+    safeItems.length > 0 && safeItems.every((item) => item.type === 'security_deposit');
 
-  const [promoCode, setPromoCode] = useState('');
-  const [promoPercent, setPromoPercent] = useState(0);
-  const [promoApplied, setPromoApplied] = useState(false);
+  const safeSubtotal = Number(subtotal || 0);
+  const safeLodgingTax = Number(lodgingTax || 0);
+  const safeSalesTax = Number(salesTax || 0);
+  const safeDepositAmount = Number(depositAmount || 0);
+  const safeTotalAmount = Number(totalAmount || 0);
 
-  // ✅ SIMPLE PROMO LOGIC (matches your backend)
-  function applyPromo() {
-    const code = promoCode.trim().toUpperCase();
+  const discountAmount = (safeSubtotal * promoDiscount) / 100;
+  const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
 
-    let percent = 0;
+  const adjustedSalesTax =
+    promoDiscount > 0 ? discountedSubtotal * 0.065 : safeSalesTax;
 
-    if (code === 'TKAC20') percent = 20;
-    if (code === 'VVH2026') percent = 10;
-    if (code === 'TEST100') percent = 100;
+  const adjustedLodgingTax =
+    promoDiscount > 0 && hasProperties ? discountedSubtotal * 0.115 : safeLodgingTax;
 
-    setPromoPercent(percent);
-    setPromoApplied(percent > 0);
-  }
-
-  const discountAmount =
-    promoPercent > 0 ? (subtotal * promoPercent) / 100 : 0;
-
-  const finalTotal = subtotal - discountAmount;
+  const finalTotal =
+    safeTotalAmount > 0
+      ? safeTotalAmount
+      : discountedSubtotal + adjustedSalesTax + adjustedLodgingTax;
 
   async function handleCheckout() {
+    setError('');
+
+    if (!customerName.trim() || !customerEmail.trim()) {
+      setError('Please enter name and email');
+      return;
+    }
+
+    setIsLoading(true);
+
     try {
-      const res = await fetch(
-        'https://uqlggilqcovmukjivyhq.supabase.co/functions/v1/create-payment-intent',
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
             items: safeItems,
+            customerEmail: customerEmail.trim(),
+            customerName: customerName.trim(),
+            subtotal: safeSubtotal,
+            lodgingTax: adjustedLodgingTax,
+            salesTax: adjustedSalesTax,
+            totalPrice: finalTotal,
             promoCode,
-            promoDiscount: promoPercent,
+            promoDiscount,
           }),
         }
       );
 
-      const data = await res.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (data?.url) {
-        window.location.href = data.url;
-      } else {
-        alert('Checkout error');
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Payment failed');
       }
-    } catch (err) {
-      console.error(err);
-      alert('Checkout failed');
+
+      if (!data?.url) {
+        throw new Error('No checkout URL received');
+      }
+
+      window.location.href = data.url;
+    } catch (err: any) {
+      console.error('Checkout error:', err);
+      setError(err?.message || 'Checkout failed');
+      setIsLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-white w-full max-w-lg p-6 rounded-lg">
-
-        <h2 className="text-xl font-bold mb-4">Checkout</h2>
-
-        {/* PROMO */}
-        <div className="flex gap-2 mb-4">
-          <input
-            value={promoCode}
-            onChange={(e) => setPromoCode(e.target.value)}
-            placeholder="Promo Code"
-            className="border p-2 flex-1 rounded"
-          />
-          <button
-            onClick={applyPromo}
-            className="bg-blue-600 text-white px-3 rounded"
-          >
-            Apply
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+        <div className="flex justify-between border-b p-6">
+          <h2 className="text-xl font-bold">Secure Checkout</h2>
+          <button onClick={onClose} type="button">
+            <X />
           </button>
         </div>
 
-        {/* TOTALS */}
-        <div className="space-y-2 mb-4">
+        <div className="space-y-6 p-6">
+          <div className="rounded-xl bg-gray-50 p-4">
+            <h3 className="mb-4 font-semibold">Order Summary</h3>
 
-          <div className="flex justify-between">
-            <span>Subtotal</span>
-            <span>${subtotal.toFixed(2)}</span>
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>${safeSubtotal.toFixed(2)}</span>
+            </div>
+
+            {promoDiscount > 0 && (
+              <div className="flex justify-between text-green-600">
+                <span>Discount ({promoDiscount}%)</span>
+                <span>-${discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="flex justify-between">
+              <span>Sales Tax</span>
+              <span>${adjustedSalesTax.toFixed(2)}</span>
+            </div>
+
+            {hasProperties && (
+              <div className="flex justify-between">
+                <span>Lodging Tax</span>
+                <span>${adjustedLodgingTax.toFixed(2)}</span>
+              </div>
+            )}
+
+            {safeDepositAmount > 0 && (
+              <div className="flex justify-between text-orange-600">
+                <span>Security Deposit Hold</span>
+                <span>${safeDepositAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-between border-t pt-4 text-lg font-bold">
+              <span>Total</span>
+              <span className="text-blue-600">${finalTotal.toFixed(2)}</span>
+            </div>
           </div>
 
-          {promoApplied && (
-            <div className="flex justify-between text-green-600">
-              <span>Promo Discount</span>
-              <span>-${discountAmount.toFixed(2)}</span>
+          <div>
+            <label className="font-semibold">Full Name</label>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="mt-2 w-full rounded-lg border p-3"
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold">Email Address</label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              className="mt-2 w-full rounded-lg border p-3"
+            />
+          </div>
+
+          {!isDepositOnly && (
+            <div>
+              <label className="font-semibold">Promo Code</label>
+              <input
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                className="mt-2 w-full rounded-lg border p-3"
+              />
             </div>
           )}
 
-          <div className="flex justify-between font-bold text-lg">
-            <span>Total</span>
-            <span>${finalTotal.toFixed(2)}</span>
-          </div>
-
-        </div>
-
-        {/* ACTIONS */}
-        <div className="flex justify-between gap-2">
-          <button
-            onClick={onClose}
-            className="border px-4 py-2 rounded w-full"
-          >
-            Cancel
-          </button>
+          {error && <div className="text-red-500">{error}</div>}
 
           <button
             onClick={handleCheckout}
-            className="bg-green-600 text-white px-4 py-2 rounded w-full"
+            disabled={isLoading}
+            className="flex w-full items-center justify-center rounded-lg bg-blue-600 p-3 font-semibold text-white"
+            type="button"
           >
-            Pay Now
+            {isLoading ? <Loader2 className="animate-spin" /> : 'Proceed to Checkout'}
           </button>
         </div>
-
       </div>
     </div>
   );
