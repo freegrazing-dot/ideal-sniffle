@@ -2,87 +2,79 @@ import { useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import type { CartItem } from '../lib/cart-context';
 
-interface Props {
+interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   items?: CartItem[];
+  totalAmount: number;
   subtotal: number;
   lodgingTax: number;
   salesTax: number;
+  depositAmount: number;
+  promoCode?: string;
+  promoDiscount?: number;
+  onSuccess: () => void;
+  onPromoChange?: (code: string, discount: number) => void;
 }
 
 export default function CheckoutModal({
   isOpen,
   onClose,
   items = [],
+  totalAmount,
   subtotal,
   lodgingTax,
   salesTax,
-}: Props) {
-  const safeItems = Array.isArray(items) ? items : [];
-
+  depositAmount,
+  promoDiscount: initialPromoDiscount = 0,
+}: CheckoutModalProps) {
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [promoCode, setPromoCode] = useState('');
-  const [promoDiscount, setPromoDiscount] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [promoDiscount] = useState(initialPromoDiscount);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   if (!isOpen) return null;
 
-  const hasProperties = safeItems.some(i => i.type === 'property');
+  const safeItems = Array.isArray(items) ? items : [];
 
-  // 💥 PROMO APPLY
-  function applyPromo() {
-    const code = promoCode.trim().toUpperCase();
+  const hasProperties = safeItems.some((item) => item.type === 'property');
+  const isDepositOnly =
+    safeItems.length > 0 && safeItems.every((item) => item.type === 'security_deposit');
 
-    if (code === 'TKAC20') {
-      setPromoDiscount(20);
-      return;
-    }
+  const safeSubtotal = Number(subtotal || 0);
+  const safeLodgingTax = Number(lodgingTax || 0);
+  const safeSalesTax = Number(salesTax || 0);
+  const safeDepositAmount = Number(depositAmount || 0);
+  const safeTotalAmount = Number(totalAmount || 0);
 
-    if (code === 'VVH2026') {
-      setPromoDiscount(10);
-      return;
-    }
-
-    if (code === 'TEST100') {
-      setPromoDiscount(100);
-      return;
-    }
-
-    alert('Invalid promo code');
-    setPromoDiscount(0);
-  }
-
-  // 💥 TOTALS
-  const discountAmount = (subtotal * promoDiscount) / 100;
-  const discountedSubtotal = subtotal - discountAmount;
+  const discountAmount = (safeSubtotal * promoDiscount) / 100;
+  const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
 
   const adjustedSalesTax =
-    promoDiscount > 0 ? discountedSubtotal * 0.065 : salesTax;
+    promoDiscount > 0 ? discountedSubtotal * 0.065 : safeSalesTax;
 
   const adjustedLodgingTax =
-    promoDiscount > 0 && hasProperties
-      ? discountedSubtotal * 0.115
-      : lodgingTax;
+    promoDiscount > 0 && hasProperties ? discountedSubtotal * 0.115 : safeLodgingTax;
 
-  const total =
-    discountedSubtotal + adjustedSalesTax + adjustedLodgingTax;
+  const finalTotal =
+    safeTotalAmount > 0
+      ? safeTotalAmount
+      : discountedSubtotal + adjustedSalesTax + adjustedLodgingTax;
 
-  // 💥 CHECKOUT
   async function handleCheckout() {
     setError('');
 
-    if (!customerName || !customerEmail) {
-      setError('Enter name and email');
+    if (!customerName.trim() || !customerEmail.trim()) {
+      setError('Please enter name and email');
       return;
     }
 
-    setLoading(true);
+    setIsLoading(true);
 
     try {
-      const res = await fetch(
+      const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
         {
           method: 'POST',
@@ -92,83 +84,59 @@ export default function CheckoutModal({
           },
           body: JSON.stringify({
             items: safeItems,
-            customerEmail,
-            customerName,
-            salesTax: adjustedSalesTax,
+            customerEmail: customerEmail.trim(),
+            customerName: customerName.trim(),
+            subtotal: safeSubtotal,
             lodgingTax: adjustedLodgingTax,
+            salesTax: adjustedSalesTax,
+            totalPrice: finalTotal,
             promoCode,
             promoDiscount,
           }),
         }
       );
 
-      const data = await res.json();
+      const data = await response.json().catch(() => ({}));
 
-      if (!res.ok) throw new Error(data.error || 'Checkout failed');
+      if (!response.ok) {
+        throw new Error(data?.error || data?.message || 'Payment failed');
+      }
+
+      if (!data?.url) {
+        throw new Error('No checkout URL received');
+      }
 
       window.location.href = data.url;
     } catch (err: any) {
-      setError(err.message);
-      setLoading(false);
+      console.error('Checkout error:', err);
+      setError(err?.message || 'Checkout failed');
+      setIsLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-white p-6 rounded-xl w-full max-w-lg">
-        <div className="flex justify-between mb-4">
-          <h2 className="text-xl font-bold">Checkout</h2>
-          <button onClick={onClose}><X /></button>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+        <div className="flex justify-between border-b p-6">
+          <h2 className="text-xl font-bold">Secure Checkout</h2>
+          <button onClick={onClose} type="button">
+            <X />
+          </button>
         </div>
 
-        <div className="space-y-4">
-          <input
-            placeholder="Full Name"
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            className="w-full border p-3 rounded"
-          />
+        <div className="space-y-6 p-6">
+          <div className="rounded-xl bg-gray-50 p-4">
+            <h3 className="mb-4 font-semibold">Order Summary</h3>
 
-          <input
-            placeholder="Email"
-            value={customerEmail}
-            onChange={(e) => setCustomerEmail(e.target.value)}
-            className="w-full border p-3 rounded"
-          />
-
-          {/* PROMO */}
-          <div className="flex gap-2">
-            <input
-              placeholder="Promo Code"
-              value={promoCode}
-              onChange={(e) => setPromoCode(e.target.value)}
-              className="flex-1 border p-3 rounded"
-            />
-            <button
-              onClick={applyPromo}
-              className="bg-gray-800 text-white px-4 rounded"
-            >
-              Apply
-            </button>
-          </div>
-
-          {promoDiscount > 0 && (
-            <div className="text-green-600">
-              {promoDiscount}% discount applied
-            </div>
-          )}
-
-          {/* SUMMARY */}
-          <div className="border-t pt-4 space-y-2">
             <div className="flex justify-between">
               <span>Subtotal</span>
-              <span>${subtotal.toFixed(2)}</span>
+              <span>${safeSubtotal.toFixed(2)}</span>
             </div>
 
             {promoDiscount > 0 && (
               <div className="flex justify-between text-green-600">
-                <span>Discount</span>
-                <span>- ${discountAmount.toFixed(2)}</span>
+                <span>Discount ({promoDiscount}%)</span>
+                <span>-${discountAmount.toFixed(2)}</span>
               </div>
             )}
 
@@ -184,20 +152,58 @@ export default function CheckoutModal({
               </div>
             )}
 
-            <div className="flex justify-between font-bold text-lg mt-2">
+            {safeDepositAmount > 0 && (
+              <div className="flex justify-between text-orange-600">
+                <span>Security Deposit Hold</span>
+                <span>${safeDepositAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-between border-t pt-4 text-lg font-bold">
               <span>Total</span>
-              <span>${total.toFixed(2)}</span>
+              <span className="text-blue-600">${finalTotal.toFixed(2)}</span>
             </div>
           </div>
+
+          <div>
+            <label className="font-semibold">Full Name</label>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="mt-2 w-full rounded-lg border p-3"
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold">Email Address</label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              className="mt-2 w-full rounded-lg border p-3"
+            />
+          </div>
+
+          {!isDepositOnly && (
+            <div>
+              <label className="font-semibold">Promo Code</label>
+              <input
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                className="mt-2 w-full rounded-lg border p-3"
+              />
+            </div>
+          )}
 
           {error && <div className="text-red-500">{error}</div>}
 
           <button
             onClick={handleCheckout}
-            disabled={loading}
-            className="w-full bg-blue-600 text-white p-3 rounded flex justify-center"
+            disabled={isLoading}
+            className="flex w-full items-center justify-center rounded-lg bg-blue-600 p-3 font-semibold text-white"
+            type="button"
           >
-            {loading ? <Loader2 className="animate-spin" /> : 'Pay Now'}
+            {isLoading ? <Loader2 className="animate-spin" /> : 'Proceed to Checkout'}
           </button>
         </div>
       </div>
