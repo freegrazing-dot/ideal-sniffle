@@ -1,10 +1,18 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Plus, Trash2, Clock, Users } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Calendar as CalendarIcon,
+  Plus,
+  Trash2,
+  Clock,
+  Users,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Activity, Booking, AvailabilityException } from '../types';
 
 interface DayBooking extends Booking {
-  activities: Activity;
+  activities?: Activity;
 }
 
 interface DayData {
@@ -84,9 +92,8 @@ export function AdminCalendarView() {
       const dayBookings = bookings.filter((b) => b.booking_date === dateStr);
       const dayExceptions = exceptions.filter((e) => e.exception_date === dateStr);
 
-      const isBlocked = (Array.isArray(dayExceptions) ? dayExceptions : []).some(
-  (e) => !e.start_time && !e.end_time
-);
+      const isBlocked = dayExceptions.some((e) => !e.start_time && !e.end_time);
+
       dataMap.set(dateStr, {
         date,
         bookings: dayBookings,
@@ -126,7 +133,10 @@ export function AdminCalendarView() {
   }
 
   function formatMonthYear() {
-    return currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    return currentMonth.toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
   }
 
   function getDayClassName(date: Date | null, isSelected: boolean) {
@@ -134,10 +144,12 @@ export function AdminCalendarView() {
 
     const dateStr = date.toISOString().split('T')[0];
     const dayData = monthData.get(dateStr);
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    let className = 'min-h-24 p-2 border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors';
+    let className =
+      'min-h-24 p-2 border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors';
 
     if (date.getTime() === today.getTime()) className += ' ring-2 ring-cyan-500';
     if (isSelected) className += ' bg-cyan-50';
@@ -189,6 +201,7 @@ export function AdminCalendarView() {
         .eq('id', exceptionId);
 
       if (error) throw error;
+
       loadMonthData();
     } catch (error) {
       console.error('Error removing exception:', error);
@@ -197,7 +210,15 @@ export function AdminCalendarView() {
 
   const days = getDaysInMonth();
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const selectedDayData = selectedDate ? monthData.get(selectedDate) : null;
+
+  const selectedDayData: DayData | null = selectedDate
+    ? monthData.get(selectedDate) || {
+        date: new Date(`${selectedDate}T00:00:00`),
+        bookings: [],
+        exceptions: [],
+        isBlocked: false,
+      }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -225,7 +246,10 @@ export function AdminCalendarView() {
 
         <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200">
           {weekDays.map((day) => (
-            <div key={day} className="bg-gray-50 text-center text-sm font-semibold text-gray-700 py-3">
+            <div
+              key={day}
+              className="bg-gray-50 text-center text-sm font-semibold text-gray-700 py-3"
+            >
               {day}
             </div>
           ))}
@@ -241,6 +265,7 @@ export function AdminCalendarView() {
               const dateStr = day.toISOString().split('T')[0];
               const dayData = monthData.get(dateStr);
               const isSelected = dateStr === selectedDate;
+              const safeBookings = dayData?.bookings || [];
 
               return (
                 <div
@@ -252,18 +277,19 @@ export function AdminCalendarView() {
 
                   {dayData && (
                     <div className="space-y-1">
-                      {dayData.bookings.slice(0, 2).map((booking) => (
+                      {safeBookings.slice(0, 2).map((booking) => (
                         <div
                           key={booking.id}
                           className="text-xs bg-cyan-100 text-cyan-800 px-1.5 py-0.5 rounded truncate"
                         >
-                          {booking.booking_time} - {booking.activities?.name?.substring(0, 15) || 'Booking'}
+                          {booking.booking_time} -{' '}
+                          {booking.activities?.name?.substring(0, 15) || 'Booking'}
                         </div>
                       ))}
 
-                      {dayData.bookings.length > 2 && (
+                      {safeBookings.length > 2 && (
                         <div className="text-xs text-gray-600 font-medium">
-                          +{dayData.bookings.length - 2} more
+                          +{safeBookings.length - 2} more
                         </div>
                       )}
 
@@ -302,15 +328,15 @@ export function AdminCalendarView() {
             </button>
           </div>
 
-          {selectedDayData.bookings.length > 0 && (
+          {(selectedDayData.bookings || []).length > 0 && (
             <div className="mb-6">
               <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                 <Users className="w-5 h-5 text-cyan-600" />
-                Bookings ({selectedDayData.bookings.length})
+                Bookings ({(selectedDayData.bookings || []).length})
               </h4>
 
               <div className="space-y-3">
-                {selectedDayData.bookings.map((booking) => (
+                {(selectedDayData.bookings || []).map((booking) => (
                   <div key={booking.id} className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
                     <div className="flex items-center gap-3 mb-2">
                       <span className="font-semibold text-gray-900">{booking.booking_time}</span>
@@ -321,9 +347,12 @@ export function AdminCalendarView() {
 
                     <div className="text-sm text-gray-700">
                       <p className="font-medium">{booking.customer_name}</p>
-                      <p>{booking.customer_email} • {booking.customer_phone}</p>
+                      <p>
+                        {booking.customer_email} • {booking.customer_phone}
+                      </p>
                       <p className="mt-1">
-                        <span className="font-medium">{booking.num_people} people</span> • ${booking.total_price}
+                        <span className="font-medium">{booking.num_people} people</span> • $
+                        {booking.total_price}
                       </p>
                     </div>
                   </div>
@@ -332,7 +361,7 @@ export function AdminCalendarView() {
             </div>
           )}
 
-          {selectedDayData.exceptions.length > 0 && (
+          {(selectedDayData.exceptions || []).length > 0 && (
             <div>
               <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                 <Clock className="w-5 h-5 text-red-600" />
@@ -340,8 +369,11 @@ export function AdminCalendarView() {
               </h4>
 
               <div className="space-y-2">
-                {selectedDayData.exceptions.map((exception) => (
-                  <div key={exception.id} className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center justify-between">
+                {(selectedDayData.exceptions || []).map((exception) => (
+                  <div
+                    key={exception.id}
+                    className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center justify-between"
+                  >
                     <div>
                       <div className="font-medium text-gray-900">
                         {exception.start_time && exception.end_time
@@ -365,9 +397,12 @@ export function AdminCalendarView() {
             </div>
           )}
 
-          {selectedDayData.bookings.length === 0 && selectedDayData.exceptions.length === 0 && (
-            <p className="text-gray-500 text-center py-8">No bookings or blocked times for this date</p>
-          )}
+          {(selectedDayData.bookings || []).length === 0 &&
+            (selectedDayData.exceptions || []).length === 0 && (
+              <p className="text-gray-500 text-center py-8">
+                No bookings or blocked times for this date
+              </p>
+            )}
         </div>
       )}
 
