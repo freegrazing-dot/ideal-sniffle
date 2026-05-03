@@ -159,9 +159,16 @@ export default function CheckoutModal({
             <h3 className="mb-4 font-semibold">Order Summary</h3>
 
             <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>${safeSubtotal.toFixed(2)}</span>
-            </div>
+  <span>Rental Subtotal</span>
+  <span>${safeSubtotal.toFixed(2)}</span>
+</div>
+
+{hasProperties && (
+  <div className="flex justify-between text-gray-600">
+    <span>Includes Cleaning Fee</span>
+    <span>$190.00</span>
+  </div>
+)}
 
             {promoDiscount > 0 && (
               <div className="flex justify-between text-green-600">
