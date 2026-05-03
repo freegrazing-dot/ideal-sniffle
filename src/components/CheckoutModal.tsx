@@ -11,10 +11,7 @@ interface CheckoutModalProps {
   lodgingTax: number;
   salesTax: number;
   depositAmount: number;
-  promoCode?: string;
   promoDiscount?: number;
-  onSuccess: () => void;
-  onPromoChange?: (code: string, discount: number) => void;
 }
 
 export default function CheckoutModal({
@@ -40,71 +37,49 @@ export default function CheckoutModal({
   const safeItems = Array.isArray(items) ? items : [];
 
   const hasProperties = safeItems.some((item) => item?.type === 'property');
-  const isDepositOnly =
-    safeItems.length > 0 &&
-    safeItems.every((item) => item?.type === 'security_deposit');
+
+  const cleaningFee = hasProperties ? 190 : 0;
 
   const safeSubtotal = Number(subtotal || 0);
-  const safeLodgingTax = Number(lodgingTax || 0);
-  const safeSalesTax = Number(salesTax || 0);
-  const safeDepositAmount = Number(depositAmount || 0);
-  const safeTotalAmount = Number(totalAmount || 0);
 
   function applyPromoCode() {
     const code = promoCode.trim().toUpperCase();
 
-    if (!code) {
+    if (code === 'TKAC20') setPromoDiscount(20);
+    else if (code === 'VVH2026') setPromoDiscount(10);
+    else if (code === 'TEST100') setPromoDiscount(100);
+    else {
       setPromoDiscount(0);
-      return;
+      setError('Invalid promo code');
     }
-
-    if (code === 'TKAC20') {
-      setPromoDiscount(20);
-      return;
-    }
-
-    if (code === 'VVH2026') {
-      setPromoDiscount(10);
-      return;
-    }
-
-    if (code === 'TEST100') {
-      setPromoDiscount(100);
-      return;
-    }
-
-    setPromoDiscount(0);
-    setError('Invalid promo code');
   }
 
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
 
-  const adjustedSalesTax =
-    promoDiscount > 0 ? discountedSubtotal * 0.065 : safeSalesTax;
-
-  const adjustedLodgingTax =
-    promoDiscount > 0 && hasProperties
-      ? discountedSubtotal * 0.115
-      : safeLodgingTax;
+  const salesTaxAmount = discountedSubtotal * 0.065;
+  const lodgingTaxAmount = hasProperties
+    ? discountedSubtotal * 0.115
+    : 0;
 
   const finalTotal =
-    safeTotalAmount > 0 && promoDiscount === 0
-      ? safeTotalAmount
-      : discountedSubtotal + adjustedSalesTax + adjustedLodgingTax;
+    discountedSubtotal +
+    cleaningFee +
+    salesTaxAmount +
+    lodgingTaxAmount;
 
   async function handleCheckout() {
     setError('');
 
-    if (!customerName.trim() || !customerEmail.trim()) {
-      setError('Please enter name and email');
+    if (!customerName || !customerEmail) {
+      setError('Enter name and email');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      const response = await fetch(
+      const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`,
         {
           method: 'POST',
@@ -114,148 +89,110 @@ export default function CheckoutModal({
           },
           body: JSON.stringify({
             items: safeItems,
-            customerEmail: customerEmail.trim(),
-            customerName: customerName.trim(),
+            customerEmail,
+            customerName,
             subtotal: safeSubtotal,
-            lodgingTax: adjustedLodgingTax,
-            salesTax: adjustedSalesTax,
+            lodgingTax: lodgingTaxAmount,
+            salesTax: salesTaxAmount,
             totalPrice: finalTotal,
-            promoCode: promoCode.trim().toUpperCase(),
+            promoCode,
             promoDiscount,
           }),
         }
       );
 
-      const data = await response.json().catch(() => ({}));
+      const data = await res.json();
 
-      if (!response.ok) {
-        throw new Error(data?.error || data?.message || 'Payment failed');
-      }
-
-      if (!data?.url) {
-        throw new Error('No checkout URL received');
-      }
+      if (!data?.url) throw new Error('No checkout URL');
 
       window.location.href = data.url;
     } catch (err: any) {
-      console.error('Checkout error:', err);
-      setError(err?.message || 'Checkout failed');
+      setError(err.message);
       setIsLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
-        <div className="flex justify-between border-b p-6">
-          <h2 className="text-xl font-bold">Secure Checkout</h2>
-          <button onClick={onClose} type="button">
-            <X />
-          </button>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70">
+      <div className="bg-white rounded-xl w-full max-w-lg p-6">
+        <div className="flex justify-between mb-4">
+          <h2 className="font-bold text-lg">Secure Checkout</h2>
+          <button onClick={onClose}><X /></button>
         </div>
 
-        <div className="space-y-6 p-6">
-          <div className="rounded-xl bg-gray-50 p-4">
-            <h3 className="mb-4 font-semibold">Order Summary</h3>
-
-            <div className="flex justify-between">
-  <span>Rental Subtotal</span>
-  <span>${safeSubtotal.toFixed(2)}</span>
-</div>
-
-{hasProperties && (
-  <div className="flex justify-between text-gray-600">
-    <span>Includes Cleaning Fee</span>
-    <span>$190.00</span>
-  </div>
-)}
-
-            {promoDiscount > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Promo Discount ({promoDiscount}%)</span>
-                <span>-${discountAmount.toFixed(2)}</span>
-              </div>
-            )}
-
-            <div className="flex justify-between">
-              <span>Sales Tax</span>
-              <span>${adjustedSalesTax.toFixed(2)}</span>
-            </div>
-
-            {hasProperties && (
-              <div className="flex justify-between">
-                <span>Lodging Tax</span>
-                <span>${adjustedLodgingTax.toFixed(2)}</span>
-              </div>
-            )}
-
-            {safeDepositAmount > 0 && (
-              <div className="flex justify-between text-orange-600">
-                <span>Security Deposit Hold</span>
-                <span>${safeDepositAmount.toFixed(2)}</span>
-              </div>
-            )}
-
-            <div className="mt-4 flex justify-between border-t pt-4 text-lg font-bold">
-              <span>Total</span>
-              <span className="text-blue-600">${finalTotal.toFixed(2)}</span>
-            </div>
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <span>Rental Subtotal</span>
+            <span>${safeSubtotal.toFixed(2)}</span>
           </div>
 
-          <div>
-            <label className="font-semibold">Full Name</label>
-            <input
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="mt-2 w-full rounded-lg border p-3"
-            />
-          </div>
-
-          <div>
-            <label className="font-semibold">Email Address</label>
-            <input
-              type="email"
-              value={customerEmail}
-              onChange={(e) => setCustomerEmail(e.target.value)}
-              className="mt-2 w-full rounded-lg border p-3"
-            />
-          </div>
-
-          {!isDepositOnly && (
-            <div>
-              <label className="font-semibold">Promo Code</label>
-              <div className="mt-2 flex gap-2">
-                <input
-                  value={promoCode}
-                  onChange={(e) => {
-                    setPromoCode(e.target.value.toUpperCase());
-                    setError('');
-                  }}
-                  className="w-full rounded-lg border p-3"
-                  placeholder="Enter promo code"
-                />
-                <button
-                  onClick={applyPromoCode}
-                  className="rounded-lg bg-gray-900 px-4 font-semibold text-white"
-                  type="button"
-                >
-                  Apply
-                </button>
-              </div>
+          {promoDiscount > 0 && (
+            <div className="flex justify-between text-green-600">
+              <span>Promo ({promoDiscount}%)</span>
+              <span>-${discountAmount.toFixed(2)}</span>
             </div>
           )}
 
-          {error && <div className="text-red-500">{error}</div>}
+          {hasProperties && (
+            <div className="flex justify-between">
+              <span>Cleaning Fee</span>
+              <span>${cleaningFee.toFixed(2)}</span>
+            </div>
+          )}
 
-          <button
-            onClick={handleCheckout}
-            disabled={isLoading}
-            className="flex w-full items-center justify-center rounded-lg bg-blue-600 p-3 font-semibold text-white disabled:opacity-50"
-            type="button"
-          >
-            {isLoading ? <Loader2 className="animate-spin" /> : 'Proceed to Checkout'}
+          <div className="flex justify-between">
+            <span>Sales Tax</span>
+            <span>${salesTaxAmount.toFixed(2)}</span>
+          </div>
+
+          {hasProperties && (
+            <div className="flex justify-between">
+              <span>Lodging Tax</span>
+              <span>${lodgingTaxAmount.toFixed(2)}</span>
+            </div>
+          )}
+
+          <div className="flex justify-between font-bold text-blue-600 mt-3">
+            <span>Total</span>
+            <span>${finalTotal.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <input
+          placeholder="Full Name"
+          className="w-full border p-2 mt-4"
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+        />
+
+        <input
+          placeholder="Email"
+          className="w-full border p-2 mt-2"
+          value={customerEmail}
+          onChange={(e) => setCustomerEmail(e.target.value)}
+        />
+
+        <div className="flex mt-2 gap-2">
+          <input
+            placeholder="Promo Code"
+            className="flex-1 border p-2"
+            value={promoCode}
+            onChange={(e) => setPromoCode(e.target.value)}
+          />
+          <button onClick={applyPromoCode} className="bg-black text-white px-3">
+            Apply
           </button>
         </div>
+
+        {error && <div className="text-red-500 mt-2">{error}</div>}
+
+        <button
+          onClick={handleCheckout}
+          className="w-full bg-blue-600 text-white mt-4 p-3 rounded"
+          disabled={isLoading}
+        >
+          {isLoading ? <Loader2 className="animate-spin" /> : 'Proceed to Checkout'}
+        </button>
       </div>
     </div>
   );
