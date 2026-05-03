@@ -1,3 +1,4 @@
+console.log("TKAC FORCE BUILD 2");
 import Success from './pages/Success';
 import Login from './pages/Login';
 import WelcomeGuide from './pages/WelcomeGuide';
