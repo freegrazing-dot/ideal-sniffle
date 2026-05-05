@@ -144,7 +144,7 @@ export default function MerchandiseModal({
                     </p>
 
                     <div className="mt-2 font-bold">
-                      ${item.price.toFixed(2)}
+                      ${Number(item.price || 0).toFixed(2)}
                     </div>
 
                   </div>
@@ -206,7 +206,7 @@ export default function MerchandiseModal({
                     </p>
 
                     <div className="mt-3 font-bold text-lg">
-                      ${selectedItem.price.toFixed(2)}
+                      ${selectedNumber(selectedItem?.price || 0).toFixed(2)}
                     </div>
 
                     {selectedItem.sizes?.length > 0 && (
