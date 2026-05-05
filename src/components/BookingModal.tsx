@@ -489,7 +489,7 @@ export function BookingModal({ activity, isOpen, onClose, onSuccess: _onSuccess 
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-700">Price (per person)</span>
-                  <span className="font-bold text-cyan-700">${activity.base_price.toFixed(2)}</span>
+                  <span className="font-bold text-cyan-700">${Number(activity.base_price || activity.price || 0).toFixed(2)}</span>
                 </div>
                 {isJetSki && (
                   <div className="bg-white rounded-lg p-4 mt-3">
