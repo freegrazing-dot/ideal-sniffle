@@ -53,9 +53,12 @@ export function Success() {
 
       console.log('Verify payment response:', data);
 
-      if (data?.bookings?.length) {
-        setBooking(data.bookings[0]);
-      }
+      localStorage.removeItem('tkac_cart');
+window.dispatchEvent(new Event('cartUpdated'));
+
+if (data?.bookings?.length) {
+  setBooking(data.bookings[0]);
+}
     } catch (err) {
       console.error('Verify payment error:', err);
     } finally {
