@@ -83,7 +83,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
               ) : (
                 <>
                   <div className="space-y-4 mb-6">
-                    {items.map((item: any) => {
+                    {items.map((item: any, index: number) => {
                       const displayName =
                         item.type === 'activity'
                           ? item.activity?.name || item.name || 'Activity'
@@ -99,7 +99,7 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
 
                       return (
                         <div
-                          key={item.id || `${item.type}-${displayName}`}
+                          key={item.id || `${item.type || 'item'}-${index}`}
                           className="bg-gradient-to-br from-slate-50 to-cyan-50 rounded-xl p-4 border border-cyan-100"
                         >
                           <div className="flex justify-between items-start gap-4">
@@ -171,7 +171,11 @@ export function CartModal({ isOpen, onClose }: CartModalProps) {
 
                               <button
                                 type="button"
-                                onClick={() => removeItem(item.id)}
+                                onClick={() => {
+  if (item?.id) {
+    removeItem(item.id);
+  }
+}}
                                 className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
                               >
                                 <Trash2 className="w-5 h-5" />
