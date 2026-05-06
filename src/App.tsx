@@ -1,6 +1,7 @@
 import { useState, useEffect, Component, ReactNode, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Home, Anchor } from 'lucide-react';
+
 import { ActivityCard } from './components/ActivityCard';
 import PropertyCard from './components/PropertyCard';
 import { AddToCartModal } from './components/AddToCartModal';
@@ -9,6 +10,7 @@ import AddPropertyToCartModal from './components/AddPropertyToCartModal';
 import { PropertyGallery } from './components/PropertyGallery';
 import SecurityDepositCard from './components/SecurityDepositCard';
 import MerchandiseShopCard from './components/MerchandiseShopCard';
+import MerchandiseModal from './components/MerchandiseModal';
 
 import { Footer } from './components/Footer';
 import { Hero } from './components/Hero';
@@ -41,6 +43,7 @@ interface MerchandiseItem {
   sizes: string[];
   colors: string[];
   image_url?: string;
+  gallery_images?: string[];
   stock_quantity: number;
   active: boolean;
 }
@@ -50,120 +53,109 @@ function HomePage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [securityDepositProducts, setSecurityDepositProducts] = useState<SecurityDepositProduct[]>([]);
   const [merchandiseItems, setMerchandiseItems] = useState<MerchandiseItem[]>([]);
+
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [galleryProperty, setGalleryProperty] = useState<Property | null>(null);
+
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
   const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isMerchandiseModalOpen, setIsMerchandiseModalOpen] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [modalOpenTimestamp, setModalOpenTimestamp] = useState(0);
+
   const { addSecurityDepositItem, addMerchandiseItem } = useCart();
-useEffect(() => {
-  if (!isSupabaseConfigured) {
-    setLoading(false);
-    return;
-  }
 
-  fetchData();
-
-  if (window.location.search) {
-    const urlParams = new URLSearchParams(window.location.search);
-    const promoCode =
-      urlParams.get('promo') ||
-      urlParams.get('code') ||
-      urlParams.get('PROMO') ||
-      urlParams.get('CODE');
-
-    if (urlParams.toString() !== (promoCode ? `promo=${promoCode}` : '')) {
-      const cleanUrl = promoCode
-        ? `${window.location.pathname}?promo=${encodeURIComponent(promoCode)}`
-        : window.location.pathname;
-      window.history.replaceState({}, '', cleanUrl);
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      return;
     }
-  }
 
-  const handleFocus = () => {
     fetchData();
-  };
 
-  window.addEventListener('focus', handleFocus);
+    const handleFocus = () => fetchData();
+    window.addEventListener('focus', handleFocus);
 
-  return () => {
-    window.removeEventListener('focus', handleFocus);
-  };
-}, []);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
   const fetchData = async () => {
     try {
-     const [
-  propertiesResult,
-  activitiesResult,
-  securityDepositsResult,
-  merchandiseResult
-] = await Promise.all([
-  supabase
-    .from('properties')
-    .select('*')
-    .eq('active', true)
-    .order('created_at'),
+      const [
+        propertiesResult,
+        activitiesResult,
+        securityDepositsResult,
+        merchandiseResult,
+      ] = await Promise.all([
+        supabase
+          .from('properties')
+          .select('*')
+          .eq('active', true)
+          .order('created_at'),
 
-  supabase
-    .from('activities')
-    .select(`
-      *,
-      activity_images (
-        image_url,
-        display_order
-      )
-    `)
-    .eq('active', true)
-    .order('created_at'),
+        supabase
+          .from('activities')
+          .select(`
+            *,
+            activity_images (
+              image_url,
+              display_order
+            )
+          `)
+          .eq('active', true)
+          .order('created_at'),
 
-  supabase
-    .from('security_deposit_products')
-    .select('*')
-    .eq('active', true)
-    .order('created_at'),
+        supabase
+          .from('security_deposit_products')
+          .select('*')
+          .eq('active', true)
+          .order('created_at'),
 
-  supabase
-    .from('merchandise_items')
-    .select(`
-      *,
-      merchandise_item_images (
-        image_url,
-        display_order
-      )
-    `)
-    .eq('active', true)
-    .order('created_at')
-]);
+        supabase
+          .from('merchandise_items')
+          .select(`
+            *,
+            merchandise_item_images (
+              image_url,
+              display_order
+            )
+          `)
+          .eq('active', true)
+          .order('created_at'),
+      ]);
 
       if (propertiesResult.error) {
         console.error('Properties error:', propertiesResult.error);
       } else {
         setProperties(
-  (propertiesResult.data || []).map((p: any) => ({
-    ...p,
-    name: p.title ?? p.name ?? ''
-  }))
-);
+          (propertiesResult.data || []).map((p: any) => ({
+            ...p,
+            name: p.title ?? p.name ?? '',
+          }))
+        );
       }
-if (activitiesResult.error) {
-  console.error('Activities error:', activitiesResult.error);
-} else {
-  setActivities(
-    (activitiesResult.data || []).map((activity: any) => ({
-      ...activity,
-      name: activity.title ?? activity.name ?? '',
-      gallery_images:
-        (activity.activity_images || [])
-          .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
-          .map((img: any) => img.image_url),
-    }))
-  );
-}
+
+      if (activitiesResult.error) {
+        console.error('Activities error:', activitiesResult.error);
+      } else {
+        setActivities(
+          (activitiesResult.data || []).map((activity: any) => ({
+            ...activity,
+            name: activity.title ?? activity.name ?? '',
+            price: Number(activity.price ?? activity.base_price ?? 0),
+            base_price: Number(activity.base_price ?? activity.price ?? 0),
+            gallery_images:
+              (activity.activity_images || [])
+                .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
+                .map((img: any) => img.image_url),
+          }))
+        );
+      }
+
       if (securityDepositsResult.error) {
         console.error('Security deposits error:', securityDepositsResult.error);
       } else {
@@ -176,23 +168,23 @@ if (activitiesResult.error) {
         console.log('MERCH FROM ADMIN:', merchandiseResult.data);
 
         setMerchandiseItems(
-  (merchandiseResult.data || []).map((item: any) => ({
-    id: item.id,
-    name: item.name ?? '',
-    description: item.description ?? '',
-    price: Number(item.price ?? 0),
-    category: item.category ?? 'Merch',
-    sizes: Array.isArray(item.sizes) ? item.sizes : [],
-    colors: Array.isArray(item.colors) ? item.colors : [],
-    image_url: item.image_url ?? '',
-    gallery_images:
-      (item.merchandise_item_images || [])
-        .sort((a:any,b:any)=>a.display_order-b.display_order)
-        .map((img:any)=>img.image_url),
-    stock_quantity: 10,
-    active: item.active ?? true
-  }))
-);
+          (merchandiseResult.data || []).map((item: any) => ({
+            id: item.id,
+            name: item.name ?? '',
+            description: item.description ?? '',
+            price: Number(item.price ?? 0),
+            category: item.category ?? 'Merch',
+            sizes: Array.isArray(item.sizes) ? item.sizes : [],
+            colors: Array.isArray(item.colors) ? item.colors : [],
+            image_url: item.image_url ?? '',
+            gallery_images:
+              (item.merchandise_item_images || [])
+                .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
+                .map((img: any) => img.image_url),
+            stock_quantity: Number(item.stock_quantity ?? 10),
+            active: item.active ?? true,
+          }))
+        );
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -223,8 +215,8 @@ if (activitiesResult.error) {
     await addSecurityDepositItem({
       propertyId: product.property_id,
       propertyName: property?.name || 'Property',
-      depositAmount: product.deposit_amount,
-      description: product.description
+      depositAmount: Number(product.deposit_amount || 0),
+      description: product.description,
     });
 
     setIsCartModalOpen(true);
@@ -242,10 +234,11 @@ if (activitiesResult.error) {
       size,
       color,
       quantity,
-      price: item.price,
-      description: item.description
+      price: Number(item.price || 0),
+      description: item.description,
     });
 
+    setIsMerchandiseModalOpen(false);
     setIsCartModalOpen(true);
   };
 
@@ -408,7 +401,14 @@ if (activitiesResult.error) {
         />
       )}
 
-     
+      {isMerchandiseModalOpen && (
+        <MerchandiseModal
+          isOpen={isMerchandiseModalOpen}
+          items={merchandiseItems}
+          onClose={() => setIsMerchandiseModalOpen(false)}
+          onAddToCart={handleAddMerchandise}
+        />
+      )}
     </div>
   );
 }
