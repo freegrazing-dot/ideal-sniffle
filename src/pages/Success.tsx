@@ -71,9 +71,11 @@ export function Success() {
         }
 
         // CLEAR CART
-        localStorage.removeItem(
-          'tkac_cart'
-        );
+       // CLEAR CART
+localStorage.removeItem('tkac_cart');
+sessionStorage.setItem('tkac_cart_cleared', 'true');
+window.dispatchEvent(new Event('storage'));
+        
 
         if (
           mounted &&
