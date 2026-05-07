@@ -112,49 +112,63 @@ function normalizeItem(item: any): CartItem | null {
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
 
-  useEffect(() => {
-    const savedCart = localStorage.getItem(CART_STORAGE_KEY);
+ useEffect(() => {
+  const handleStorageChange = () => {
+    refreshCart();
+  };
 
-    if (savedCart) {
-      try {
-        const parsed = JSON.parse(savedCart);
-        const cleaned = Array.isArray(parsed)
-          ? parsed
-              .map(normalizeItem)
-              .filter((item): item is CartItem => Boolean(item))
-          : [];
+  window.addEventListener(
+    'storage',
+    handleStorageChange
+  );
 
-        setItems(cleaned);
-      } catch (error) {
-        console.error('Error loading cart:', error);
-        localStorage.removeItem(CART_STORAGE_KEY);
-      }
-    }
-  }, []);
+  return () => {
+    window.removeEventListener(
+      'storage',
+      handleStorageChange
+    );
+  };
+}, []);
 
   useEffect(() => {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
   const refreshCart = async () => {
-    const savedCart = localStorage.getItem(CART_STORAGE_KEY);
+  const savedCart = localStorage.getItem(CART_STORAGE_KEY);
 
-    if (savedCart) {
-      try {
-        const parsed = JSON.parse(savedCart);
-        const cleaned = Array.isArray(parsed)
-          ? parsed
-              .map(normalizeItem)
-              .filter((item): item is CartItem => Boolean(item))
-          : [];
+  // CART EMPTY
+  if (!savedCart) {
+    setItems([]);
+    return;
+  }
 
-        setItems(cleaned);
-      } catch (error) {
-        console.error('Error refreshing cart:', error);
-        localStorage.removeItem(CART_STORAGE_KEY);
-      }
-    }
-  };
+  try {
+    const parsed = JSON.parse(savedCart);
+
+    const cleaned = Array.isArray(parsed)
+      ? parsed
+          .map(normalizeItem)
+          .filter(
+            (item): item is CartItem =>
+              Boolean(item)
+          )
+      : [];
+
+    setItems(cleaned);
+  } catch (error) {
+    console.error(
+      'Error refreshing cart:',
+      error
+    );
+
+    localStorage.removeItem(
+      CART_STORAGE_KEY
+    );
+
+    setItems([]);
+  }
+};
 
   const addItem = async (params: AddActivityToCartParams) => {
     const price = toMoneyNumber(params.price);
