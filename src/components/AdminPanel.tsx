@@ -1,3 +1,4 @@
+import AdminMerchView from './AdminMerchView';
 import ActivitiesAdmin from './ActivitiesAdmin';
 import { useState } from 'react';
 import PropertiesAdmin from './PropertiesAdmin';
@@ -74,7 +75,8 @@ export default function AdminPanel() {
         {activeTab === 'banners' && <PromoBannerAdmin />}
         {activeTab === 'settings' && <SiteSettings />}
         {activeTab === 'tax' && <TaxReport />}
-               {activeTab === 'activities' && <ActivitiesAdmin />}
+        {activeTab === 'activities' && <ActivitiesAdmin />}
+        {activeTab === 'merch' && <AdminMerchView />}     
       </div>
     </div>
   );
