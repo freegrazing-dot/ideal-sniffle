@@ -1,157 +1,339 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import Stripe from 'npm:stripe@17.7.0';
-import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-const stripeSecret = Deno.env.get('STRIPE_SECRET_KEY');
-const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const stripeSecret =
+  Deno.env.get('STRIPE_SECRET_KEY');
 
-const stripe = stripeSecret ? new Stripe(stripeSecret, {
-  appInfo: {
-    name: 'TKAC Adventures Verify',
-    version: '1.0.0',
-  },
-}) : null;
+const resendKey =
+  Deno.env.get('RESEND_API_KEY');
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+const stripe = stripeSecret
+  ? new Stripe(stripeSecret, {
+      appInfo: {
+        name: 'TKAC Verify Payment',
+        version: '1.0.0',
+      },
+    })
+  : null;
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': 'https://tkacvacations.com',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods':
+    'POST, OPTIONS',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
 };
 
+async function sendEmail(
+  session: Stripe.Checkout.Session
+) {
+  if (!resendKey) {
+    console.error(
+      'Missing RESEND_API_KEY'
+    );
+
+    return;
+  }
+
+  const customerEmail =
+    session.customer_details
+      ?.email ||
+    session.customer_email ||
+    session.metadata
+      ?.customer_email ||
+    'freegrazing@gmail.com';
+
+  const customerName =
+    session.customer_details
+      ?.name ||
+    session.metadata
+      ?.customer_name ||
+    'Customer';
+
+  const cartItems =
+    session.metadata
+      ?.cart_items ||
+    'No cart items';
+
+  // CUSTOMER EMAIL
+  const response = await fetch(
+    'https://api.resend.com/emails',
+    {
+      method: 'POST',
+
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        'Content-Type':
+          'application/json',
+      },
+
+      body: JSON.stringify({
+        from:
+          'onboarding@resend.dev',
+
+        to: [
+          'freegrazing@gmail.com',
+        ],
+
+        subject:
+          'TKAC Order Confirmation',
+
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 24px;">
+
+            <h1 style="color:#0f172a;">
+              Thank You For Your Order
+            </h1>
+
+            <p>
+              Hi ${customerName},
+            </p>
+
+            <p>
+              Your payment has been received successfully.
+            </p>
+
+            <div style="background:#f8fafc; padding:16px; border-radius:12px; margin-top:20px;">
+
+              <h2 style="margin-top:0;">
+                Order Details
+              </h2>
+
+              <p>
+                <strong>Email:</strong>
+                ${customerEmail}
+              </p>
+
+              <p>
+                <strong>Session ID:</strong>
+                ${session.id}
+              </p>
+
+            </div>
+
+            <p style="margin-top:30px;">
+              Thank you for choosing TKAC Vacations.
+            </p>
+
+          </div>
+        `,
+
+        text: `
+Thank you for your order.
+
+Customer:
+${customerName}
+
+Email:
+${customerEmail}
+
+Session:
+${session.id}
+        `,
+      }),
+    }
+  );
+
+  const result =
+    await response.text();
+
+  // ADMIN EMAIL
+  await fetch(
+    'https://api.resend.com/emails',
+    {
+      method: 'POST',
+
+      headers: {
+        Authorization: `Bearer ${resendKey}`,
+        'Content-Type':
+          'application/json',
+      },
+
+      body: JSON.stringify({
+        from:
+          'onboarding@resend.dev',
+
+        to: [
+          'freegrazing@gmail.com',
+        ],
+
+        subject:
+          'NEW TKAC ORDER',
+
+        html: `
+          <h1>
+            New Order Received
+          </h1>
+
+          <p>
+            <strong>Customer:</strong>
+            ${customerName}
+          </p>
+
+          <p>
+            <strong>Email:</strong>
+            ${customerEmail}
+          </p>
+
+          <pre>
+${cartItems}
+          </pre>
+        `,
+      }),
+    }
+  );
+
+  console.log(
+    'EMAIL RESULT:',
+    result
+  );
+
+  if (!response.ok) {
+    console.error(
+      'EMAIL FAILED:',
+      result
+    );
+  }
+}
 
 Deno.serve(async (req: Request) => {
-  try {
-    if (req.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 200,
-        headers: corsHeaders,
-      });
-    }
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', {
+      headers: corsHeaders,
+    });
+  }
 
+  try {
     if (req.method !== 'POST') {
       return new Response(
-        JSON.stringify({ error: 'Method not allowed' }),
+        JSON.stringify({
+          error:
+            'Method not allowed',
+        }),
         {
           status: 405,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: {
+            ...corsHeaders,
+            'Content-Type':
+              'application/json',
+          },
         }
       );
     }
 
     if (!stripe) {
       return new Response(
-        JSON.stringify({ error: 'Payment service not configured' }),
+        JSON.stringify({
+          error:
+            'Stripe not configured',
+        }),
         {
           status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: {
+            ...corsHeaders,
+            'Content-Type':
+              'application/json',
+          },
         }
       );
     }
 
-    const { sessionId } = await req.json();
+    const body =
+      await req.json();
+
+    const sessionId =
+      body?.sessionId;
+
+    console.log(
+      'VERIFY SESSION:',
+      sessionId
+    );
 
     if (!sessionId) {
       return new Response(
-        JSON.stringify({ error: 'Session ID is required' }),
+        JSON.stringify({
+          error:
+            'Missing sessionId',
+        }),
         {
           status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          headers: {
+            ...corsHeaders,
+            'Content-Type':
+              'application/json',
+          },
         }
       );
     }
 
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    console.log('Retrieved session:', {
-      id: session.id,
-      payment_status: session.payment_status,
-      metadata: session.metadata
-    });
-
-    if (session.payment_status !== 'paid') {
-      return new Response(
-        JSON.stringify({ error: 'Payment not completed' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
+    const session =
+      await stripe.checkout.sessions.retrieve(
+        sessionId
       );
-    }
 
-    const bookingType = session.metadata?.booking_type || 'activity';
-    const bookingId = session.metadata?.booking_id;
-    const bookingIds = session.metadata?.booking_ids?.split(',') || [];
-
-    console.log('Extracted metadata:', { bookingType, bookingId, bookingIds });
-
-    if (!bookingId && bookingIds.length === 0) {
-      console.error('No booking IDs found in session metadata');
-      return new Response(
-        JSON.stringify({ error: 'No bookings found for this payment' }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        }
-      );
-    }
-
-    const tableName = bookingType === 'rental' ? 'rental_bookings' : 'bookings';
-    const idsToUpdate = bookingId ? [bookingId] : bookingIds;
-
-    const { error: updateError } = await supabase
-      .from(tableName)
-      .update({
-        payment_status: 'paid',
-        status: 'confirmed',
-      })
-      .in('id', idsToUpdate);
-
-    if (updateError) {
-      console.error('Booking update error:', updateError);
-      throw updateError;
-    }
-
-    let bookings;
-    if (bookingType === 'rental') {
-      const { data, error: fetchError } = await supabase
-        .from('rental_bookings')
-        .select('*, properties(name)')
-        .in('id', idsToUpdate);
-
-      if (fetchError) {
-        console.error('Rental booking fetch error:', fetchError);
-        throw fetchError;
+    console.log(
+      'SESSION STATUS:',
+      {
+        id: session.id,
+        payment_status:
+          session.payment_status,
       }
-      bookings = data;
-    } else {
-      const { data, error: fetchError } = await supabase
-        .from('bookings')
-        .select('*, activities(name)')
-        .in('id', idsToUpdate);
+    );
 
-      if (fetchError) {
-        console.error('Booking fetch error:', fetchError);
-        throw fetchError;
-      }
-      bookings = data;
+    if (
+      session.payment_status !==
+      'paid'
+    ) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Payment not completed',
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            'Content-Type':
+              'application/json',
+          },
+        }
+      );
     }
+
+    await sendEmail(session);
 
     return new Response(
-      JSON.stringify({ bookings, success: true, bookingType }),
+      JSON.stringify({
+        success: true,
+      }),
       {
         status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: {
+          ...corsHeaders,
+          'Content-Type':
+            'application/json',
+        },
       }
     );
   } catch (error: any) {
-    console.error('Verify payment error:', error);
+    console.error(
+      'VERIFY PAYMENT ERROR:',
+      error
+    );
+
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({
+        error:
+          error?.message ||
+          'Verify payment failed',
+      }),
       {
         status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: {
+          ...corsHeaders,
+          'Content-Type':
+            'application/json',
+        },
       }
     );
   }
