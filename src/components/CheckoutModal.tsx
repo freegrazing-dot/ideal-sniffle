@@ -8,6 +8,8 @@ interface CheckoutModalProps {
   items?: CartItem[];
 }
 
+const MERCH_SHIPPING_FEE = 8.95;
+
 export default function CheckoutModal({
   isOpen,
   onClose,
@@ -17,6 +19,7 @@ export default function CheckoutModal({
   const [customerEmail, setCustomerEmail] = useState('');
   const [promoCode, setPromoCode] = useState('');
   const [promoDiscount, setPromoDiscount] = useState(0);
+  const [deliveryMethod, setDeliveryMethod] = useState<'ship' | 'pickup'>('ship');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,11 +30,11 @@ export default function CheckoutModal({
   const normalizedItems = safeItems.map((item: any, index: number) => {
     const safePrice = Number(
       item?.price ||
-      item?.activity?.price ||
-      item?.merchandise?.price ||
-      item?.property?.price_per_night ||
-      item?.property?.price ||
-      0
+        item?.activity?.price ||
+        item?.merchandise?.price ||
+        item?.property?.price_per_night ||
+        item?.property?.price ||
+        0
     );
 
     return {
@@ -64,7 +67,15 @@ export default function CheckoutModal({
     (item: any) => item?.type === 'property'
   );
 
+  const hasMerchandise = normalizedItems.some(
+    (item: any) => item?.type === 'merchandise'
+  );
+
   const cleaningFee = hasProperties ? 190 : 0;
+  const shippingFee =
+    hasMerchandise && deliveryMethod === 'ship'
+      ? MERCH_SHIPPING_FEE
+      : 0;
 
   const subtotal = normalizedItems.reduce((sum: number, item: any) => {
     return sum + Number(item.price || 0) * Number(item.quantity || 1);
@@ -102,15 +113,21 @@ export default function CheckoutModal({
     Number(subtotal || 0) - Number(discountAmount || 0)
   );
 
-  const salesTaxAmount = discountedSubtotal * 0.065;
+ const taxableSubtotal =
+  Number(subtotal || 0) +
+  Number(cleaningFee || 0) +
+  Number(shippingFee || 0);
 
-  const lodgingTaxAmount = hasProperties
-    ? discountedSubtotal * 0.115
-    : 0;
+const salesTaxAmount = taxableSubtotal * 0.065;
+
+const lodgingTaxAmount = hasProperties
+  ? Number(subtotal || 0) * 0.115
+  : 0;
 
   const finalTotal =
     discountedSubtotal +
     Number(cleaningFee || 0) +
+    Number(shippingFee || 0) +
     Number(salesTaxAmount || 0) +
     Number(lodgingTaxAmount || 0);
 
@@ -158,6 +175,8 @@ export default function CheckoutModal({
             customerEmail,
             subtotal: Number(subtotal || 0),
             cleaningFee: Number(cleaningFee || 0),
+            shippingFee: Number(shippingFee || 0),
+            deliveryMethod,
             promoCode,
             promoDiscount: Number(promoDiscount || 0),
             salesTax: Number(salesTaxAmount || 0),
@@ -200,6 +219,36 @@ export default function CheckoutModal({
           </button>
         </div>
 
+        {hasMerchandise && (
+          <div className="border rounded-lg p-3 mb-4 bg-slate-50">
+            <div className="font-semibold mb-2">
+              Merch Delivery
+            </div>
+
+            <label className="flex items-center gap-2 mb-2 cursor-pointer">
+              <input
+                type="radio"
+                name="deliveryMethod"
+                value="ship"
+                checked={deliveryMethod === 'ship'}
+                onChange={() => setDeliveryMethod('ship')}
+              />
+              <span>Ship my order — ${MERCH_SHIPPING_FEE.toFixed(2)}</span>
+            </label>
+
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="deliveryMethod"
+                value="pickup"
+                checked={deliveryMethod === 'pickup'}
+                onChange={() => setDeliveryMethod('pickup')}
+              />
+              <span>Local pickup — Free</span>
+            </label>
+          </div>
+        )}
+
         <div className="space-y-2">
           <div className="flex justify-between">
             <span>Subtotal</span>
@@ -215,8 +264,7 @@ export default function CheckoutModal({
               </span>
 
               <span>
-                -$
-                {Number(discountAmount || 0).toFixed(2)}
+                -${Number(discountAmount || 0).toFixed(2)}
               </span>
             </div>
           )}
@@ -227,6 +275,20 @@ export default function CheckoutModal({
 
               <span>
                 ${Number(cleaningFee || 0).toFixed(2)}
+              </span>
+            </div>
+          )}
+
+          {hasMerchandise && (
+            <div className="flex justify-between">
+              <span>
+                {deliveryMethod === 'ship'
+                  ? 'Shipping'
+                  : 'Local Pickup'}
+              </span>
+
+              <span>
+                ${Number(shippingFee || 0).toFixed(2)}
               </span>
             </div>
           )}
