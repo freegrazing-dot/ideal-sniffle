@@ -39,7 +39,7 @@ export default function CheckoutModal({
   const [promoApplied, setPromoApplied] = useState(initialPromoDiscount > 0);
   const [promoMessage, setPromoMessage] = useState('');
   const [isValidatingPromo, setIsValidatingPromo] = useState(false);
-  const [deliveryMethod, setDeliveryMethod] = useState<'ship' | 'pickup'>('ship');
+  const [deliveryMethod, setDeliveryMethod] = useState<'ship' | 'pickup'>('pickup');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
