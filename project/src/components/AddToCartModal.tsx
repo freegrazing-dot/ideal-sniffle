@@ -80,21 +80,37 @@ export function AddToCartModal({ activity, isOpen, onClose, onSuccess }: AddToCa
     setError('');
 
     try {
-      const totalPrice = calculatePrice();
+      const totalPrice = Number(calculatePrice() || 0);
+
+if (!totalPrice || totalPrice <= 0) {
+  throw new Error('Invalid activity price');
+}
 
       await addItem({
-        activity,
-        rentalType: isJetSki ? rentalType : undefined,
-        duration: isJetSki ? duration : undefined,
-        numPeople: isJetSki ? (rentalType === 'double' ? 2 : 1) : formData.num_people,
-        bookingDate: formData.booking_date,
-        bookingTime: formData.booking_time,
-        specialRequests: formData.special_requests,
-        price: totalPrice,
-        phoneNumber: formData.phone_number,
-        damageProtection: isJetSki ? (damageProtection || undefined) : undefined,
-        damageProtectionAmount: isJetSki && damageProtection ? (damageProtection === 'insurance' ? 25 : 500) : undefined,
-      });
+  type: 'activity',
+  activity,
+  name: activity.name,
+  price: Number(totalPrice),
+  quantity: 1,
+
+  rentalType: isJetSki ? rentalType : undefined,
+  duration: isJetSki ? duration : undefined,
+  numPeople: isJetSki ? (rentalType === 'double' ? 2 : 1) : formData.num_people,
+
+  bookingDate: formData.booking_date,
+  bookingTime: formData.booking_time,
+  specialRequests: formData.special_requests,
+
+  phoneNumber: formData.phone_number,
+
+  damageProtection: isJetSki ? damageProtection || undefined : undefined,
+  damageProtectionAmount:
+    isJetSki && damageProtection
+      ? damageProtection === 'insurance'
+        ? 25
+        : 500
+      : undefined,
+});
 
       onSuccess();
       onClose();
