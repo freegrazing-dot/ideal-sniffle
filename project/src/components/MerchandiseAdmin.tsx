@@ -78,7 +78,7 @@ export default function MerchandiseAdmin() {
 
   const upload = async (file: File | null) => {
     if (!file) return null;
-    const res = await uploadImage(file, 'merchandise');
+    const res = await uploadImage(file, 'MERCHANDISE');
     if (!res || res.error || !res.url) {
       throw new Error(res?.error || 'Image upload failed');
     }

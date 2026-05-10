@@ -4,7 +4,7 @@ export type ImageBucket =
   | 'property-images'
   | 'activity-images'
   | 'hero-images'
-  | 'merchandise';
+  | 'MERCHANDISE';
 
 export async function uploadImage(
   file: File,
