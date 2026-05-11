@@ -82,7 +82,62 @@ export function CartModal({
     setPromoMessage('');
 
     try {
-      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/validate_promo_code_v2`;
+     try {
+  const { data, error } = await supabase.rpc(
+    'validate_promo_code_v2',
+    {
+      p_code: codeToUse,
+      p_order_type: hasProperties
+        ? 'properties'
+        : hasActivities
+        ? 'activities'
+        : 'merch',
+      p_subtotal: safeSubtotal,
+    }
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data?.valid) {
+    setPromoApplied(false);
+    setPromoDiscount(0);
+
+    setPromoMessage(
+      data?.message || 'Invalid promo code'
+    );
+
+    onPromoChange?.('', 0);
+    return;
+  }
+
+  const nextDiscount = Number(
+    data.discount_percent || 0
+  );
+
+  setPromoCode(data.code || codeToUse);
+  setPromoDiscount(nextDiscount);
+  setPromoApplied(true);
+
+  setPromoMessage(
+    `Promo applied: ${nextDiscount}% off`
+  );
+
+  onPromoChange?.(
+    data.code || codeToUse,
+    nextDiscount
+  );
+} catch (err) {
+  console.error('Promo error:', err);
+
+  setPromoApplied(false);
+  setPromoDiscount(0);
+
+  setPromoMessage(
+    'Error applying promo code'
+  );
+}
 
       const response = await fetch(apiUrl, {
         method: 'POST',
