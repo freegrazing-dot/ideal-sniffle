@@ -414,13 +414,13 @@ function AppContent() {
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
 
   const {
-    items,
-    subtotal,
-    salesTax,
-    lodgingTax,
-    depositAmount,
-    totalAmount,
-  } = useCart();
+  items,
+  subtotal,
+  salesTax,
+  lodgingTax,
+  depositAmount,
+  totalPrice,
+} = useCart();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -450,7 +450,7 @@ function AppContent() {
           salesTax={salesTax}
           lodgingTax={lodgingTax}
           depositAmount={depositAmount}
-          totalAmount={totalAmount}
+          totalAmount={totalPrice}
           onSuccess={() => setIsCartModalOpen(false)}
         />
       )}
