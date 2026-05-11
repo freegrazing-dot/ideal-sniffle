@@ -64,7 +64,7 @@ export function CartModal({
 
   const shippingFee =
   fulfillmentMethod === 'shipping' ? SHIPPING_FEE : 0;
-);
+
 
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
