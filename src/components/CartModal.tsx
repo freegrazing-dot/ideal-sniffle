@@ -467,6 +467,8 @@ export function CartModal({
     </div>
   </div>
 )}
+            </div>
+          )}
 
           {!isDepositOnly && (
             <div>
