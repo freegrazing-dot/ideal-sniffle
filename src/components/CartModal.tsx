@@ -62,10 +62,8 @@ export function CartModal({
   const safeSalesTax = Number(salesTax || 0);
   const safeDepositAmount = Number(depositAmount || 0);
 
-  const shippingFee = Number(
-  hasMerchandise && fulfillmentMethod === 'shipping'
-    ? SHIPPING_FEE
-    : 0
+  const shippingFee =
+  fulfillmentMethod === 'shipping' ? SHIPPING_FEE : 0;
 );
 
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
