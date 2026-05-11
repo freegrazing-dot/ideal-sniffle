@@ -1,4 +1,10 @@
-import { useState, useEffect, Component, ReactNode, lazy, Suspense } from 'react';
+console.log("TKAC FORCE BUILD 2");
+
+import Success from './pages/Success';
+import Login from './pages/Login';
+import WelcomeGuide from './pages/WelcomeGuide';
+import UploadBoatingCard from './pages/UploadBoatingCard';
+import { useState, useEffect, Component, ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Home, Anchor } from 'lucide-react';
 
@@ -10,21 +16,17 @@ import AddPropertyToCartModal from './components/AddPropertyToCartModal';
 import { PropertyGallery } from './components/PropertyGallery';
 import SecurityDepositCard from './components/SecurityDepositCard';
 import MerchandiseShopCard from './components/MerchandiseShopCard';
-import MerchandiseModal from './components/MerchandiseModal';
+import AdminMerchModal from './components/AdminMerchModal';
 
 import { Footer } from './components/Footer';
 import { Hero } from './components/Hero';
 import { Navigation } from './components/Navigation';
+
 import { Activity, Property } from './types';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { useCart } from './lib/cart-context';
 import { NotFound } from './pages/NotFound';
 import AdminPanel from './components/AdminPanel';
-
-const Success = lazy(() => import('./pages/Success'));
-const Login = lazy(() => import('./pages/Login'));
-const WelcomeGuide = lazy(() => import('./pages/WelcomeGuide'));
-const UploadBoatingCard = lazy(() => import('./pages/UploadBoatingCard'));
 
 interface SecurityDepositProduct {
   id: string;
@@ -40,27 +42,34 @@ interface MerchandiseItem {
   description: string;
   price: number;
   category: string;
-  sizes: string[];
-  colors: string[];
+  sizes?: string[] | string | null;
+  colors?: string[] | null;
   image_url?: string;
-  gallery_images?: string[];
-  stock_quantity: number;
+  back_image_url?: string | null;
+  gallery_images?: string[] | null;
   active: boolean;
 }
 
-function HomePage() {
+function HomePage({ openCart }: { openCart: () => void }) {
   const [properties, setProperties] = useState<Property[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [securityDepositProducts, setSecurityDepositProducts] = useState<SecurityDepositProduct[]>([]);
-  const [merchandiseItems, setMerchandiseItems] = useState<MerchandiseItem[]>([]);
+  const [securityDepositProducts, setSecurityDepositProducts] = useState<
+    SecurityDepositProduct[]
+  >([]);
+  const [merchandiseItems, setMerchandiseItems] = useState<MerchandiseItem[]>(
+    []
+  );
 
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(
+    null
+  );
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(
+    null
+  );
   const [galleryProperty, setGalleryProperty] = useState<Property | null>(null);
 
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
   const [isAddToCartModalOpen, setIsAddToCartModalOpen] = useState(false);
-  const [isCartModalOpen, setIsCartModalOpen] = useState(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isMerchandiseModalOpen, setIsMerchandiseModalOpen] = useState(false);
 
@@ -75,12 +84,23 @@ function HomePage() {
       return;
     }
 
-    fetchData();
+    void fetchData();
 
-    const handleFocus = () => fetchData();
-    window.addEventListener('focus', handleFocus);
+    if (window.location.search) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const promoCode =
+        urlParams.get('promo') ||
+        urlParams.get('code') ||
+        urlParams.get('PROMO') ||
+        urlParams.get('CODE');
 
-    return () => window.removeEventListener('focus', handleFocus);
+      if (urlParams.toString() !== (promoCode ? `promo=${promoCode}` : '')) {
+        const cleanUrl = promoCode
+          ? `${window.location.pathname}?promo=${encodeURIComponent(promoCode)}`
+          : window.location.pathname;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+    }
   }, []);
 
   const fetchData = async () => {
@@ -96,34 +116,19 @@ function HomePage() {
           .select('*')
           .eq('active', true)
           .order('created_at'),
-
         supabase
           .from('activities')
-          .select(`
-            *,
-            activity_images (
-              image_url,
-              display_order
-            )
-          `)
+          .select('*')
           .eq('active', true)
           .order('created_at'),
-
         supabase
           .from('security_deposit_products')
           .select('*')
           .eq('active', true)
           .order('created_at'),
-
         supabase
           .from('merchandise_items')
-          .select(`
-            *,
-            merchandise_item_images (
-              image_url,
-              display_order
-            )
-          `)
+          .select('*')
           .eq('active', true)
           .order('created_at'),
       ]);
@@ -131,12 +136,7 @@ function HomePage() {
       if (propertiesResult.error) {
         console.error('Properties error:', propertiesResult.error);
       } else {
-        setProperties(
-          (propertiesResult.data || []).map((p: any) => ({
-            ...p,
-            name: p.title ?? p.name ?? '',
-          }))
-        );
+        setProperties(propertiesResult.data || []);
       }
 
       if (activitiesResult.error) {
@@ -145,13 +145,9 @@ function HomePage() {
         setActivities(
           (activitiesResult.data || []).map((activity: any) => ({
             ...activity,
-            name: activity.title ?? activity.name ?? '',
-            price: Number(activity.price ?? activity.base_price ?? 0),
-            base_price: Number(activity.base_price ?? activity.price ?? 0),
-            gallery_images:
-              (activity.activity_images || [])
-                .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
-                .map((img: any) => img.image_url),
+            gallery_images: Array.isArray(activity.gallery_images)
+              ? activity.gallery_images.filter(Boolean)
+              : [],
           }))
         );
       }
@@ -165,24 +161,13 @@ function HomePage() {
       if (merchandiseResult.error) {
         console.error('Merchandise error:', merchandiseResult.error);
       } else {
-        console.log('MERCH FROM ADMIN:', merchandiseResult.data);
-
         setMerchandiseItems(
           (merchandiseResult.data || []).map((item: any) => ({
-            id: item.id,
-            name: item.name ?? '',
-            description: item.description ?? '',
-            price: Number(item.price ?? 0),
-            category: item.category ?? 'Merch',
-            sizes: Array.isArray(item.sizes) ? item.sizes : [],
-            colors: Array.isArray(item.colors) ? item.colors : [],
-            image_url: item.image_url ?? '',
-            gallery_images:
-              (item.merchandise_item_images || [])
-                .sort((a: any, b: any) => (a.display_order ?? 0) - (b.display_order ?? 0))
-                .map((img: any) => img.image_url),
-            stock_quantity: Number(item.stock_quantity ?? 10),
-            active: item.active ?? true,
+            ...item,
+            price:
+              typeof item.price === 'string'
+                ? parseFloat(item.price)
+                : item.price,
           }))
         );
       }
@@ -215,11 +200,11 @@ function HomePage() {
     await addSecurityDepositItem({
       propertyId: product.property_id,
       propertyName: property?.name || 'Property',
-      depositAmount: Number(product.deposit_amount || 0),
+      depositAmount: product.deposit_amount,
       description: product.description,
     });
 
-    setIsCartModalOpen(true);
+    openCart();
   };
 
   const handleAddMerchandise = async (
@@ -231,39 +216,45 @@ function HomePage() {
     await addMerchandiseItem({
       merchandiseId: item.id,
       name: item.name,
-      size,
-      color,
+      size: size || '',
+      color: color || '',
       quantity,
-      price: Number(item.price || 0),
+      price: item.price,
       description: item.description,
     });
 
     setIsMerchandiseModalOpen(false);
-    setIsCartModalOpen(true);
+    openCart();
   };
 
   const handleAddToCartSuccess = () => {
-    setIsCartModalOpen(true);
+    openCart();
   };
 
   return (
     <div className="min-h-screen bg-slate-50 relative">
       <Hero />
 
-      <div id="rentals" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+      <div
+        id="rentals"
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16"
+      >
         <div className="text-center mb-12">
           <div className="flex items-center justify-center mb-4">
             <Home className="w-12 h-12 text-blue-600 mr-3" />
-            <h2 className="text-4xl font-bold text-gray-900">Vacation Rentals</h2>
+            <h2 className="text-4xl font-bold text-gray-900">
+              Vacation Rentals
+            </h2>
           </div>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Experience Southwest Florida in style with our carefully selected vacation properties
+            Experience Southwest Florida in style with our carefully selected
+            vacation properties
           </p>
         </div>
 
         {loading ? (
           <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
           </div>
         ) : properties.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -278,7 +269,9 @@ function HomePage() {
           </div>
         ) : (
           <div className="text-center py-12 bg-white rounded-xl shadow-md">
-            <p className="text-gray-600">No vacation rentals available at this time.</p>
+            <p className="text-gray-600">
+              No vacation rentals available at this time.
+            </p>
           </div>
         )}
       </div>
@@ -288,16 +281,19 @@ function HomePage() {
           <div className="text-center mb-12">
             <div className="flex items-center justify-center mb-4">
               <Anchor className="w-12 h-12 text-cyan-600 mr-3" />
-              <h2 className="text-4xl font-bold text-gray-900">Water Adventures</h2>
+              <h2 className="text-4xl font-bold text-gray-900">
+                Water Adventures
+              </h2>
             </div>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              From fishing charters to sunset cruises, create unforgettable memories on the water
+              From fishing charters to sunset cruises, create unforgettable
+              memories on the water
             </p>
           </div>
 
           {loading ? (
             <div className="text-center py-12">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600"></div>
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600" />
             </div>
           ) : activities.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -311,7 +307,9 @@ function HomePage() {
             </div>
           ) : (
             <div className="text-center py-12 bg-gray-50 rounded-xl shadow-md">
-              <p className="text-gray-600">No activities available at this time.</p>
+              <p className="text-gray-600">
+                No activities available at this time.
+              </p>
             </div>
           )}
         </div>
@@ -321,7 +319,9 @@ function HomePage() {
         <div className="bg-gradient-to-br from-yellow-50 to-amber-50 py-16">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h3 className="text-3xl font-bold text-gray-900 mb-4">Additional Options</h3>
+              <h3 className="text-3xl font-bold text-gray-900 mb-4">
+                Additional Options
+              </h3>
               <p className="text-lg text-gray-700 max-w-2xl mx-auto">
                 Security deposits and merchandise for your perfect trip
               </p>
@@ -329,7 +329,9 @@ function HomePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {securityDepositProducts.map((product) => {
-                const property = properties.find((p) => p.id === product.property_id);
+                const property = properties.find(
+                  (p) => p.id === product.property_id
+                );
 
                 return (
                   <SecurityDepositCard
@@ -382,13 +384,6 @@ function HomePage() {
         />
       )}
 
-      {isCartModalOpen && (
-        <CartModal
-          isOpen={isCartModalOpen}
-          onClose={() => setIsCartModalOpen(false)}
-        />
-      )}
-
       {isGalleryOpen && galleryProperty && (
         <PropertyGallery
           key={galleryProperty.id}
@@ -402,9 +397,9 @@ function HomePage() {
       )}
 
       {isMerchandiseModalOpen && (
-        <MerchandiseModal
-          isOpen={isMerchandiseModalOpen}
+        <AdminMerchModal
           items={merchandiseItems}
+          isOpen={isMerchandiseModalOpen}
           onClose={() => setIsMerchandiseModalOpen(false)}
           onAddToCart={handleAddMerchandise}
         />
@@ -418,32 +413,45 @@ function AppContent() {
   const showNavigation = location !== '/login';
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
 
+  const {
+    items,
+    subtotal,
+    salesTax,
+    lodgingTax,
+    depositAmount,
+    totalAmount,
+  } = useCart();
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {showNavigation && <Navigation onCartClick={() => setIsCartModalOpen(true)} />}
+      {showNavigation && (
+        <Navigation onCartClick={() => setIsCartModalOpen(true)} />
+      )}
 
-      <Suspense
-        fallback={
-          <div className="min-h-screen flex items-center justify-center">
-            <div className="text-lg">Loading...</div>
-          </div>
-        }
-      >
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/admin" element={<AdminPanel />} />
-          <Route path="/success" element={<Success />} />
-          <Route path="/welcome-guide" element={<WelcomeGuide />} />
-          <Route path="/upload-boating-card" element={<UploadBoatingCard />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
+      <Routes>
+        <Route
+          path="/"
+          element={<HomePage openCart={() => setIsCartModalOpen(true)} />}
+        />
+        <Route path="/login" element={<Login />} />
+        <Route path="/admin" element={<AdminPanel />} />
+        <Route path="/success" element={<Success />} />
+        <Route path="/welcome-guide" element={<WelcomeGuide />} />
+        <Route path="/upload-boating-card" element={<UploadBoatingCard />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
 
       {showNavigation && isCartModalOpen && (
         <CartModal
           isOpen={isCartModalOpen}
           onClose={() => setIsCartModalOpen(false)}
+          items={items}
+          subtotal={subtotal}
+          salesTax={salesTax}
+          lodgingTax={lodgingTax}
+          depositAmount={depositAmount}
+          totalAmount={totalAmount}
+          onSuccess={() => setIsCartModalOpen(false)}
         />
       )}
     </div>
@@ -472,9 +480,12 @@ class ErrorBoundary extends Component<
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
-            <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
+            <h1 className="text-2xl font-bold text-red-600 mb-4">
+              Something went wrong
+            </h1>
             <p className="text-gray-700 mb-4">
-              The application encountered an error. Please try refreshing the page.
+              The application encountered an error. Please try refreshing the
+              page.
             </p>
             <button
               onClick={() => window.location.reload()}
