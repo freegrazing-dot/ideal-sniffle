@@ -21,7 +21,6 @@ export function CartModal({
   isOpen,
   onClose,
   items,
-  totalAmount,
   subtotal,
   lodgingTax,
   salesTax,
@@ -59,7 +58,6 @@ export function CartModal({
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
 
-  // Keep tax unchanged by promo. Promo discounts items only.
   const adjustedSalesTax = safeSalesTax;
   const adjustedLodgingTax = safeLodgingTax;
 
@@ -70,8 +68,8 @@ export function CartModal({
     safeDepositAmount;
 
   function getOrderType() {
-    if (hasProperties) return 'properties';
-    if (hasActivities) return 'activities';
+    if (hasProperties) return 'property';
+    if (hasActivities) return 'activity';
     if (hasMerchandise) return 'merch';
     return 'all';
   }
@@ -89,14 +87,21 @@ export function CartModal({
     setError('');
 
     try {
-      const { data, error } = await supabase.rpc(
-        'validate_promo_code_v2',
-        {
-          p_code: codeToUse,
-          p_order_type: getOrderType(),
-          p_subtotal: safeSubtotal,
-        }
-      );
+      const orderType = getOrderType();
+
+      const { data, error } = await supabase.rpc('validate_promo_code_v2', {
+        p_code: codeToUse,
+        p_order_type: orderType,
+        p_subtotal: safeSubtotal,
+      });
+
+      console.log('PROMO RPC RESULT:', {
+        code: codeToUse,
+        orderType,
+        subtotal: safeSubtotal,
+        data,
+        error,
+      });
 
       if (error) throw error;
 
@@ -213,15 +218,10 @@ export function CartModal({
 
         <div className="space-y-6 p-6">
           <div className="rounded-lg bg-gray-50 p-4 space-y-3">
-            <h3 className="font-semibold text-gray-900">
-              Order Summary
-            </h3>
+            <h3 className="font-semibold text-gray-900">Order Summary</h3>
 
             {safeItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex justify-between gap-4 text-sm"
-              >
+              <div key={item.id} className="flex justify-between gap-4 text-sm">
                 <span className="text-gray-600">
                   {item.type === 'activity'
                     ? `${item.activity?.name || 'Activity'} - ${
@@ -290,9 +290,7 @@ export function CartModal({
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">
-              Full Name
-            </label>
+            <label className="mb-2 block text-sm font-medium">Full Name</label>
             <input
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
