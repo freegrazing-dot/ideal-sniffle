@@ -376,20 +376,97 @@ export function CartModal({
               </div>
 
               {fulfillmentMethod === 'shipping' && (
-                <div className="mt-4">
-                  <label className="mb-2 block text-sm font-medium">
-                    Shipping Address
-                  </label>
-                  <textarea
-                    value={shippingAddress}
-                    onChange={(e) => setShippingAddress(e.target.value)}
-                    className="min-h-[90px] w-full rounded-lg border px-4 py-3"
-                    placeholder="Street address, city, state, ZIP"
-                  />
-                </div>
-              )}
-            </div>
-          )}
+  <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+    <h4 className="mb-4 text-base font-semibold text-gray-900">
+      Shipping Address
+    </h4>
+
+    <div className="space-y-4">
+      <div>
+        <label className="mb-1 block text-sm font-medium text-gray-700">
+          Full Name
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
+          placeholder="Full name"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-gray-700">
+          Street Address
+        </label>
+        <input
+          type="text"
+          value={shippingAddress}
+          onChange={(e) => setShippingAddress(e.target.value)}
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
+          placeholder="Street address"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-gray-700">
+          Apt, Suite, Unit, etc. (optional)
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
+          placeholder="Apartment, suite, unit, etc."
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            City
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
+            placeholder="City"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            State
+          </label>
+
+          <select className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3">
+            <option value="">Select state</option>
+            <option value="FL">Florida</option>
+            <option value="CO">Colorado</option>
+            <option value="TX">Texas</option>
+            <option value="CA">California</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">
+            ZIP Code
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3"
+            placeholder="ZIP code"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-medium text-gray-700">
+          Country
+        </label>
+
+        <select className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3">
+          <option value="US">United States</option>
+        </select>
+      </div>
+    </div>
+  </div>
+)}
 
           {!isDepositOnly && (
             <div>
