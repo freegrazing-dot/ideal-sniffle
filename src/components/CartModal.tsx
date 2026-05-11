@@ -69,7 +69,11 @@ export function CartModal({
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
 
-  const adjustedSalesTax = safeSalesTax;
+  const adjustedSalesTax = Number(
+  (
+    (discountedSubtotal + shippingFee) * 0.065
+  ).toFixed(2)
+);
   const adjustedLodgingTax = safeLodgingTax;
 
   const finalTotal = Number(
