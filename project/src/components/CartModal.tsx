@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { X, Loader2, Tag } from 'lucide-react';
 import type { CartItem } from '../lib/cart-context';
+import { supabase } from '../lib/supabase';
 
-interface CheckoutModalProps {
+interface CartModalProps {
   isOpen: boolean;
   onClose: () => void;
   items: CartItem[];
@@ -27,7 +28,7 @@ export function CartModal({
   depositAmount,
   promoDiscount: initialPromoDiscount = 0,
   onPromoChange,
-}: CheckoutModalProps) {
+}: CartModalProps) {
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [promoCode, setPromoCode] = useState('');
@@ -40,10 +41,15 @@ export function CartModal({
 
   if (!isOpen) return null;
 
-  const hasProperties = items.some((item) => item.type === 'property');
-  const hasMerchandise = items.some((item) => item.type === 'merchandise');
+  const safeItems = Array.isArray(items) ? items : [];
+
+  const hasProperties = safeItems.some((item) => item.type === 'property');
+  const hasMerchandise = safeItems.some((item) => item.type === 'merchandise');
+  const hasActivities = safeItems.some((item) => item.type === 'activity');
+
   const isDepositOnly =
-    items.length > 0 && items.every((item) => item.type === 'security_deposit');
+    safeItems.length > 0 &&
+    safeItems.every((item) => item.type === 'security_deposit');
 
   const safeSubtotal = Number(subtotal || 0);
   const safeLodgingTax = Number(lodgingTax || 0);
@@ -52,23 +58,23 @@ export function CartModal({
 
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
-  const adjustedSalesTax =
-    promoDiscount > 0 ? discountedSubtotal * 0.065 : safeSalesTax;
-  const adjustedLodgingTax =
-    promoDiscount > 0 && hasProperties
-      ? discountedSubtotal * 0.115
-      : safeLodgingTax;
+
+  // Keep tax unchanged by promo. Promo discounts items only.
+  const adjustedSalesTax = safeSalesTax;
+  const adjustedLodgingTax = safeLodgingTax;
 
   const finalTotal =
-    promoDiscount > 0
-      ? discountedSubtotal + adjustedSalesTax + adjustedLodgingTax
-      : Number(totalAmount || 0);
+    discountedSubtotal +
+    adjustedSalesTax +
+    adjustedLodgingTax +
+    safeDepositAmount;
 
-  const getOrderType = () => {
+  function getOrderType() {
     if (hasProperties) return 'properties';
+    if (hasActivities) return 'activities';
     if (hasMerchandise) return 'merch';
-    return 'activities';
-  };
+    return 'all';
+  }
 
   async function handleApplyPromoCode() {
     const codeToUse = promoCode.trim().toUpperCase();
@@ -80,84 +86,19 @@ export function CartModal({
 
     setIsValidatingPromo(true);
     setPromoMessage('');
+    setError('');
 
     try {
-     try {
-  const { data, error } = await supabase.rpc(
-    'validate_promo_code_v2',
-    {
-      p_code: codeToUse,
-      p_order_type: hasProperties
-        ? 'properties'
-        : hasActivities
-        ? 'activities'
-        : 'merch',
-      p_subtotal: safeSubtotal,
-    }
-  );
-
-  if (error) {
-    throw error;
-  }
-
-  if (!data?.valid) {
-    setPromoApplied(false);
-    setPromoDiscount(0);
-
-    setPromoMessage(
-      data?.message || 'Invalid promo code'
-    );
-
-    onPromoChange?.('', 0);
-    return;
-  }
-
-  const nextDiscount = Number(
-    data.discount_percent || 0
-  );
-
-  setPromoCode(data.code || codeToUse);
-  setPromoDiscount(nextDiscount);
-  setPromoApplied(true);
-
-  setPromoMessage(
-    `Promo applied: ${nextDiscount}% off`
-  );
-
-  onPromoChange?.(
-    data.code || codeToUse,
-    nextDiscount
-  );
-} catch (err) {
-  console.error('Promo error:', err);
-
-  setPromoApplied(false);
-  setPromoDiscount(0);
-
-  setPromoMessage(
-    'Error applying promo code'
-  );
-}
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.rpc(
+        'validate_promo_code_v2',
+        {
           p_code: codeToUse,
           p_order_type: getOrderType(),
           p_subtotal: safeSubtotal,
-        }),
-      });
+        }
+      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.message || data?.error || 'Promo validation failed');
-      }
+      if (error) throw error;
 
       if (!data?.valid) {
         setPromoApplied(false);
@@ -185,6 +126,7 @@ export function CartModal({
       setPromoApplied(false);
       setPromoDiscount(0);
       setPromoMessage('Error applying promo code');
+      onPromoChange?.('', 0);
     } finally {
       setIsValidatingPromo(false);
     }
@@ -218,22 +160,26 @@ export function CartModal({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          items,
+          items: safeItems,
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
           subtotal: safeSubtotal,
-          lodgingTax: promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax,
-          salesTax: promoDiscount > 0 ? adjustedSalesTax : safeSalesTax,
+          lodgingTax: adjustedLodgingTax,
+          salesTax: adjustedSalesTax,
           totalPrice: finalTotal,
           promoCode: promoApplied ? promoCode : undefined,
-          promoDiscount: promoApplied ? promoDiscount : undefined,
+          promoDiscount: promoApplied ? promoDiscount : 0,
         }),
       });
 
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data?.error || data?.message || 'Failed to create checkout session');
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            'Failed to create checkout session'
+        );
       }
 
       if (!data?.url) {
@@ -252,28 +198,51 @@ export function CartModal({
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 flex items-center justify-between border-b bg-white px-6 py-4">
-          <h2 className="text-2xl font-bold text-gray-900">Secure Checkout</h2>
-          <button type="button" onClick={onClose} className="rounded-full p-2 hover:bg-gray-100">
+          <h2 className="text-2xl font-bold text-gray-900">
+            Secure Checkout
+          </h2>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 hover:bg-gray-100"
+          >
             <X className="h-6 w-6 text-gray-500" />
           </button>
         </div>
 
         <div className="space-y-6 p-6">
           <div className="rounded-lg bg-gray-50 p-4 space-y-3">
-            <h3 className="font-semibold text-gray-900">Order Summary</h3>
+            <h3 className="font-semibold text-gray-900">
+              Order Summary
+            </h3>
 
-            {items.map((item) => (
-              <div key={item.id} className="flex justify-between gap-4 text-sm">
+            {safeItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex justify-between gap-4 text-sm"
+              >
                 <span className="text-gray-600">
                   {item.type === 'activity'
-                    ? `${item.activity?.name || 'Activity'} - ${item.numPeople || 1} people`
+                    ? `${item.activity?.name || 'Activity'} - ${
+                        item.numPeople || 1
+                      } people`
                     : item.type === 'property'
-                    ? `${item.property?.name || 'Property'} - ${item.guests || 1} guests`
+                    ? `${item.property?.name || 'Property'} - ${
+                        item.guests || 1
+                      } guests`
                     : item.type === 'merchandise'
-                    ? `${item.merchandiseName || item.name || 'Merchandise'} x ${item.quantity || 1}`
-                    : `Security Deposit - ${item.propertyName || 'Property'}`}
+                    ? `${item.merchandiseName || item.name || 'Merchandise'} x ${
+                        item.quantity || 1
+                      }`
+                    : `Security Deposit - ${
+                        item.propertyName || 'Property'
+                      }`}
                 </span>
-                <span className="font-medium">${Number(item.price || 0).toFixed(2)}</span>
+
+                <span className="font-medium">
+                  ${Number(item.price || 0).toFixed(2)}
+                </span>
               </div>
             ))}
 
@@ -291,17 +260,17 @@ export function CartModal({
               </div>
             )}
 
-            {(promoDiscount > 0 ? adjustedSalesTax : safeSalesTax) > 0 && (
+            {adjustedSalesTax > 0 && (
               <div className="flex justify-between text-sm">
                 <span>Sales Tax</span>
-                <span>${(promoDiscount > 0 ? adjustedSalesTax : safeSalesTax).toFixed(2)}</span>
+                <span>${adjustedSalesTax.toFixed(2)}</span>
               </div>
             )}
 
-            {(promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax) > 0 && (
+            {adjustedLodgingTax > 0 && (
               <div className="flex justify-between text-sm">
                 <span>Lodging Tax</span>
-                <span>${(promoDiscount > 0 ? adjustedLodgingTax : safeLodgingTax).toFixed(2)}</span>
+                <span>${adjustedLodgingTax.toFixed(2)}</span>
               </div>
             )}
 
@@ -314,12 +283,16 @@ export function CartModal({
 
             <div className="border-t-2 pt-3 flex justify-between">
               <span className="font-semibold">Total</span>
-              <span className="text-xl font-bold text-blue-600">${finalTotal.toFixed(2)}</span>
+              <span className="text-xl font-bold text-blue-600">
+                ${finalTotal.toFixed(2)}
+              </span>
             </div>
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Full Name</label>
+            <label className="mb-2 block text-sm font-medium">
+              Full Name
+            </label>
             <input
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
@@ -329,7 +302,9 @@ export function CartModal({
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Email Address</label>
+            <label className="mb-2 block text-sm font-medium">
+              Email Address
+            </label>
             <input
               type="email"
               value={customerEmail}
@@ -341,7 +316,9 @@ export function CartModal({
 
           {!isDepositOnly && (
             <div>
-              <label className="mb-2 block text-sm font-medium">Promo Code</label>
+              <label className="mb-2 block text-sm font-medium">
+                Promo Code
+              </label>
 
               {promoApplied ? (
                 <div className="flex items-center justify-between rounded-lg border border-green-300 bg-green-50 p-3">
@@ -351,6 +328,7 @@ export function CartModal({
                       {promoCode} applied ({promoDiscount}% off)
                     </span>
                   </div>
+
                   <button
                     type="button"
                     onClick={handleRemovePromoCode}
@@ -363,10 +341,13 @@ export function CartModal({
                 <div className="flex gap-2">
                   <input
                     value={promoCode}
-                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    onChange={(e) =>
+                      setPromoCode(e.target.value.toUpperCase())
+                    }
                     className="flex-1 rounded-lg border px-3 py-2"
                     placeholder="Enter promo code"
                   />
+
                   <button
                     type="button"
                     onClick={handleApplyPromoCode}
@@ -379,7 +360,11 @@ export function CartModal({
               )}
 
               {promoMessage && (
-                <p className={`mt-2 text-sm ${promoApplied ? 'text-green-600' : 'text-red-600'}`}>
+                <p
+                  className={`mt-2 text-sm ${
+                    promoApplied ? 'text-green-600' : 'text-red-600'
+                  }`}
+                >
                   {promoMessage}
                 </p>
               )}
