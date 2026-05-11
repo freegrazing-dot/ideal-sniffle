@@ -62,8 +62,11 @@ export function CartModal({
   const safeSalesTax = Number(salesTax || 0);
   const safeDepositAmount = Number(depositAmount || 0);
 
-  const shippingFee =
-    hasMerchandise && fulfillmentMethod === 'shipping' ? SHIPPING_FEE : 0;
+  const shippingFee = Number(
+  hasMerchandise && fulfillmentMethod === 'shipping'
+    ? SHIPPING_FEE
+    : 0
+);
 
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
@@ -71,12 +74,15 @@ export function CartModal({
   const adjustedSalesTax = safeSalesTax;
   const adjustedLodgingTax = safeLodgingTax;
 
-  const finalTotal =
+  const finalTotal = Number(
+  (
     discountedSubtotal +
     adjustedSalesTax +
     adjustedLodgingTax +
     safeDepositAmount +
-    shippingFee;
+    shippingFee
+  ).toFixed(2)
+);
 
   function getOrderType() {
     if (hasProperties) return 'property';
