@@ -17,6 +17,10 @@ interface CartModalProps {
   onPromoChange?: (code: string, discount: number) => void;
 }
 
+type FulfillmentMethod = 'pickup' | 'shipping';
+
+const SHIPPING_FEE = 10;
+
 export function CartModal({
   isOpen,
   onClose,
@@ -30,6 +34,9 @@ export function CartModal({
 }: CartModalProps) {
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [fulfillmentMethod, setFulfillmentMethod] =
+    useState<FulfillmentMethod>('pickup');
+  const [shippingAddress, setShippingAddress] = useState('');
   const [promoCode, setPromoCode] = useState('');
   const [promoDiscount, setPromoDiscount] = useState(initialPromoDiscount);
   const [promoApplied, setPromoApplied] = useState(initialPromoDiscount > 0);
@@ -55,6 +62,9 @@ export function CartModal({
   const safeSalesTax = Number(salesTax || 0);
   const safeDepositAmount = Number(depositAmount || 0);
 
+  const shippingFee =
+    hasMerchandise && fulfillmentMethod === 'shipping' ? SHIPPING_FEE : 0;
+
   const discountAmount = (safeSubtotal * promoDiscount) / 100;
   const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
 
@@ -65,7 +75,8 @@ export function CartModal({
     discountedSubtotal +
     adjustedSalesTax +
     adjustedLodgingTax +
-    safeDepositAmount;
+    safeDepositAmount +
+    shippingFee;
 
   function getOrderType() {
     if (hasProperties) return 'property';
@@ -153,6 +164,15 @@ export function CartModal({
       return;
     }
 
+    if (
+      hasMerchandise &&
+      fulfillmentMethod === 'shipping' &&
+      !shippingAddress.trim()
+    ) {
+      setError('Please enter a shipping address.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -168,6 +188,12 @@ export function CartModal({
           items: safeItems,
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
+          fulfillmentMethod: hasMerchandise ? fulfillmentMethod : undefined,
+          shippingAddress:
+            hasMerchandise && fulfillmentMethod === 'shipping'
+              ? shippingAddress.trim()
+              : undefined,
+          shippingFee,
           subtotal: safeSubtotal,
           lodgingTax: adjustedLodgingTax,
           salesTax: adjustedSalesTax,
@@ -181,9 +207,7 @@ export function CartModal({
 
       if (!response.ok) {
         throw new Error(
-          data?.error ||
-            data?.message ||
-            'Failed to create checkout session'
+          data?.error || data?.message || 'Failed to create checkout session'
         );
       }
 
@@ -203,9 +227,7 @@ export function CartModal({
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 flex items-center justify-between border-b bg-white px-6 py-4">
-          <h2 className="text-2xl font-bold text-gray-900">
-            Secure Checkout
-          </h2>
+          <h2 className="text-2xl font-bold text-gray-900">Secure Checkout</h2>
 
           <button
             type="button"
@@ -274,6 +296,13 @@ export function CartModal({
               </div>
             )}
 
+            {shippingFee > 0 && (
+              <div className="flex justify-between text-sm">
+                <span>Shipping</span>
+                <span>${shippingFee.toFixed(2)}</span>
+              </div>
+            )}
+
             {safeDepositAmount > 0 && (
               <div className="flex justify-between text-sm text-yellow-700">
                 <span>Security Deposit Hold</span>
@@ -311,6 +340,56 @@ export function CartModal({
               placeholder="john@example.com"
             />
           </div>
+
+          {hasMerchandise && (
+            <div className="rounded-lg border p-4">
+              <label className="mb-3 block text-sm font-medium">
+                Delivery Option
+              </label>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setFulfillmentMethod('pickup')}
+                  className={`rounded-lg border px-4 py-3 text-left ${
+                    fulfillmentMethod === 'pickup'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-300 bg-white text-gray-700'
+                  }`}
+                >
+                  <div className="font-semibold">Local Pickup</div>
+                  <div className="text-sm">No shipping charge</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFulfillmentMethod('shipping')}
+                  className={`rounded-lg border px-4 py-3 text-left ${
+                    fulfillmentMethod === 'shipping'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-300 bg-white text-gray-700'
+                  }`}
+                >
+                  <div className="font-semibold">Ship It</div>
+                  <div className="text-sm">${SHIPPING_FEE.toFixed(2)} flat shipping</div>
+                </button>
+              </div>
+
+              {fulfillmentMethod === 'shipping' && (
+                <div className="mt-4">
+                  <label className="mb-2 block text-sm font-medium">
+                    Shipping Address
+                  </label>
+                  <textarea
+                    value={shippingAddress}
+                    onChange={(e) => setShippingAddress(e.target.value)}
+                    className="min-h-[90px] w-full rounded-lg border px-4 py-3"
+                    placeholder="Street address, city, state, ZIP"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {!isDepositOnly && (
             <div>
