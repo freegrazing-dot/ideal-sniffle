@@ -1,4 +1,5 @@
 console.log("TKAC FORCE BUILD 2");
+
 import Success from './pages/Success';
 import Login from './pages/Login';
 import WelcomeGuide from './pages/WelcomeGuide';
@@ -52,13 +53,19 @@ interface MerchandiseItem {
 function HomePage({ openCart }: { openCart: () => void }) {
   const [properties, setProperties] = useState<Property[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [securityDepositProducts, setSecurityDepositProducts] = useState<SecurityDepositProduct[]>(
+  const [securityDepositProducts, setSecurityDepositProducts] = useState<
+    SecurityDepositProduct[]
+  >([]);
+  const [merchandiseItems, setMerchandiseItems] = useState<MerchandiseItem[]>(
     []
   );
-  const [merchandiseItems, setMerchandiseItems] = useState<MerchandiseItem[]>([]);
 
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
-  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(
+    null
+  );
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(
+    null
+  );
   const [galleryProperty, setGalleryProperty] = useState<Property | null>(null);
 
   const [isPropertyModalOpen, setIsPropertyModalOpen] = useState(false);
@@ -98,17 +105,33 @@ function HomePage({ openCart }: { openCart: () => void }) {
 
   const fetchData = async () => {
     try {
-      const [propertiesResult, activitiesResult, securityDepositsResult, merchandiseResult] =
-        await Promise.all([
-          supabase.from('properties').select('*').eq('active', true).order('created_at'),
-          supabase.from('activities').select('*').eq('active', true).order('created_at'),
-          supabase
-            .from('security_deposit_products')
-            .select('*')
-            .eq('active', true)
-            .order('created_at'),
-          supabase.from('merchandise_items').select('*').eq('active', true).order('created_at'),
-        ]);
+      const [
+        propertiesResult,
+        activitiesResult,
+        securityDepositsResult,
+        merchandiseResult,
+      ] = await Promise.all([
+        supabase
+          .from('properties')
+          .select('*')
+          .eq('active', true)
+          .order('created_at'),
+        supabase
+          .from('activities')
+          .select('*')
+          .eq('active', true)
+          .order('created_at'),
+        supabase
+          .from('security_deposit_products')
+          .select('*')
+          .eq('active', true)
+          .order('created_at'),
+        supabase
+          .from('merchandise_items')
+          .select('*')
+          .eq('active', true)
+          .order('created_at'),
+      ]);
 
       if (propertiesResult.error) {
         console.error('Properties error:', propertiesResult.error);
@@ -141,7 +164,10 @@ function HomePage({ openCart }: { openCart: () => void }) {
         setMerchandiseItems(
           (merchandiseResult.data || []).map((item: any) => ({
             ...item,
-            price: typeof item.price === 'string' ? parseFloat(item.price) : item.price,
+            price:
+              typeof item.price === 'string'
+                ? parseFloat(item.price)
+                : item.price,
           }))
         );
       }
@@ -209,14 +235,20 @@ function HomePage({ openCart }: { openCart: () => void }) {
     <div className="min-h-screen bg-slate-50 relative">
       <Hero />
 
-      <div id="rentals" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+      <div
+        id="rentals"
+        className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16"
+      >
         <div className="text-center mb-12">
           <div className="flex items-center justify-center mb-4">
             <Home className="w-12 h-12 text-blue-600 mr-3" />
-            <h2 className="text-4xl font-bold text-gray-900">Vacation Rentals</h2>
+            <h2 className="text-4xl font-bold text-gray-900">
+              Vacation Rentals
+            </h2>
           </div>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Experience Southwest Florida in style with our carefully selected vacation properties
+            Experience Southwest Florida in style with our carefully selected
+            vacation properties
           </p>
         </div>
 
@@ -237,7 +269,9 @@ function HomePage({ openCart }: { openCart: () => void }) {
           </div>
         ) : (
           <div className="text-center py-12 bg-white rounded-xl shadow-md">
-            <p className="text-gray-600">No vacation rentals available at this time.</p>
+            <p className="text-gray-600">
+              No vacation rentals available at this time.
+            </p>
           </div>
         )}
       </div>
@@ -247,10 +281,13 @@ function HomePage({ openCart }: { openCart: () => void }) {
           <div className="text-center mb-12">
             <div className="flex items-center justify-center mb-4">
               <Anchor className="w-12 h-12 text-cyan-600 mr-3" />
-              <h2 className="text-4xl font-bold text-gray-900">Water Adventures</h2>
+              <h2 className="text-4xl font-bold text-gray-900">
+                Water Adventures
+              </h2>
             </div>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              From fishing charters to sunset cruises, create unforgettable memories on the water
+              From fishing charters to sunset cruises, create unforgettable
+              memories on the water
             </p>
           </div>
 
@@ -270,7 +307,9 @@ function HomePage({ openCart }: { openCart: () => void }) {
             </div>
           ) : (
             <div className="text-center py-12 bg-gray-50 rounded-xl shadow-md">
-              <p className="text-gray-600">No activities available at this time.</p>
+              <p className="text-gray-600">
+                No activities available at this time.
+              </p>
             </div>
           )}
         </div>
@@ -280,7 +319,9 @@ function HomePage({ openCart }: { openCart: () => void }) {
         <div className="bg-gradient-to-br from-yellow-50 to-amber-50 py-16">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="text-center mb-12">
-              <h3 className="text-3xl font-bold text-gray-900 mb-4">Additional Options</h3>
+              <h3 className="text-3xl font-bold text-gray-900 mb-4">
+                Additional Options
+              </h3>
               <p className="text-lg text-gray-700 max-w-2xl mx-auto">
                 Security deposits and merchandise for your perfect trip
               </p>
@@ -288,7 +329,10 @@ function HomePage({ openCart }: { openCart: () => void }) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {securityDepositProducts.map((product) => {
-                const property = properties.find((p) => p.id === product.property_id);
+                const property = properties.find(
+                  (p) => p.id === product.property_id
+                );
+
                 return (
                   <SecurityDepositCard
                     key={product.id}
@@ -369,12 +413,26 @@ function AppContent() {
   const showNavigation = location !== '/login';
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
 
+  const {
+    items,
+    subtotal,
+    salesTax,
+    lodgingTax,
+    depositAmount,
+    totalAmount,
+  } = useCart();
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {showNavigation && <Navigation onCartClick={() => setIsCartModalOpen(true)} />}
+      {showNavigation && (
+        <Navigation onCartClick={() => setIsCartModalOpen(true)} />
+      )}
 
       <Routes>
-        <Route path="/" element={<HomePage openCart={() => setIsCartModalOpen(true)} />} />
+        <Route
+          path="/"
+          element={<HomePage openCart={() => setIsCartModalOpen(true)} />}
+        />
         <Route path="/login" element={<Login />} />
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/success" element={<Success />} />
@@ -384,7 +442,17 @@ function AppContent() {
       </Routes>
 
       {showNavigation && isCartModalOpen && (
-        <CartModal isOpen={isCartModalOpen} onClose={() => setIsCartModalOpen(false)} />
+        <CartModal
+          isOpen={isCartModalOpen}
+          onClose={() => setIsCartModalOpen(false)}
+          items={items}
+          subtotal={subtotal}
+          salesTax={salesTax}
+          lodgingTax={lodgingTax}
+          depositAmount={depositAmount}
+          totalAmount={totalAmount}
+          onSuccess={() => setIsCartModalOpen(false)}
+        />
       )}
     </div>
   );
@@ -412,9 +480,12 @@ class ErrorBoundary extends Component<
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
-            <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
+            <h1 className="text-2xl font-bold text-red-600 mb-4">
+              Something went wrong
+            </h1>
             <p className="text-gray-700 mb-4">
-              The application encountered an error. Please try refreshing the page.
+              The application encountered an error. Please try refreshing the
+              page.
             </p>
             <button
               onClick={() => window.location.reload()}
