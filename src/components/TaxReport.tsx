@@ -27,7 +27,7 @@ export function TaxReport() {
       setLoading(true);
 
       let query = supabase
-        .from('tax_report')
+        .from('tax_reports')
         .select('*')
         .order('month', { ascending: false });
 
