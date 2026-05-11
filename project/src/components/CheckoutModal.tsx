@@ -95,7 +95,11 @@ export default function CheckoutModal({
   async function handleApplyPromoCode() {
     const codeToUse =
       promoCode.trim().toUpperCase();
-
+    console.log('APPLY PROMO CLICKED:', {
+  codeToUse,
+  orderType: getOrderType(),
+  subtotal: safeSubtotal,
+});
     if (!codeToUse) {
       setPromoMessage('Enter a promo code');
       return;
