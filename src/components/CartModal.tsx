@@ -1,264 +1,397 @@
-import { X, ShoppingCart, Trash2, Calendar, Clock, Users } from 'lucide-react';
-import { useCart } from '../lib/cart-context';
 import { useState } from 'react';
-import CheckoutModal from './CheckoutModal';
+import { X, Loader2, Tag } from 'lucide-react';
+import type { CartItem } from '../lib/cart-context';
+import { supabase } from '../lib/supabase';
 
 interface CartModalProps {
   isOpen: boolean;
   onClose: () => void;
+  items: CartItem[];
+  totalAmount: number;
+  subtotal: number;
+  lodgingTax: number;
+  salesTax: number;
+  depositAmount: number;
+  promoDiscount?: number;
+  onSuccess: () => void;
+  onPromoChange?: (code: string, discount: number) => void;
 }
 
-function money(value: any) {
-  return Number(value || 0).toFixed(2);
-}
-
-export function CartModal({ isOpen, onClose }: CartModalProps) {
-  const cart = useCart();
-
-  const items = Array.isArray(cart.items) ? cart.items : [];
-  const removeItem = cart.removeItem;
-  const clearCart = cart.clearCart;
-
-  const totalPrice = Number(cart.totalPrice || 0);
-  const subtotal = Number(cart.subtotal || 0);
-  const lodgingTax = Number(cart.lodgingTax || 0);
-  const salesTax = Number(cart.salesTax || 0);
-  const depositAmount = Number(cart.depositAmount || 0);
-  const itemCount = Number(cart.itemCount || items.length || 0);
-
-  const [showCheckout, setShowCheckout] = useState(false);
+export function CartModal({
+  isOpen,
+  onClose,
+  items,
+  subtotal,
+  lodgingTax,
+  salesTax,
+  depositAmount,
+  promoDiscount: initialPromoDiscount = 0,
+  onPromoChange,
+}: CartModalProps) {
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [promoCode, setPromoCode] = useState('');
+  const [promoDiscount, setPromoDiscount] = useState(initialPromoDiscount);
+  const [promoApplied, setPromoApplied] = useState(initialPromoDiscount > 0);
+  const [promoMessage, setPromoMessage] = useState('');
+  const [isValidatingPromo, setIsValidatingPromo] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
   if (!isOpen) return null;
 
-  return (
-    <>
-      {!showCheckout && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="sticky top-0 bg-gradient-to-r from-cyan-500 to-blue-600 text-white p-6 rounded-t-2xl z-10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <ShoppingCart className="w-8 h-8" />
-                  <div>
-                    <h2 className="text-2xl font-bold">Your Cart</h2>
-                    <p className="text-cyan-100 text-sm">
-                      {itemCount} {itemCount === 1 ? 'item' : 'items'}
-                    </p>
-                  </div>
-                </div>
+  const safeItems = Array.isArray(items) ? items : [];
 
-                <div className="flex items-center gap-2">
-                  {items.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm('Clear all items from your cart?')) {
-                          clearCart();
-                        }
-                      }}
-                      className="flex items-center gap-2 px-3 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-sm font-medium"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Clear All
-                    </button>
-                  )}
+  const hasProperties = safeItems.some((item) => item.type === 'property');
+  const hasMerchandise = safeItems.some((item) => item.type === 'merchandise');
+  const hasActivities = safeItems.some((item) => item.type === 'activity');
+
+  const isDepositOnly =
+    safeItems.length > 0 &&
+    safeItems.every((item) => item.type === 'security_deposit');
+
+  const safeSubtotal = Number(subtotal || 0);
+  const safeLodgingTax = Number(lodgingTax || 0);
+  const safeSalesTax = Number(salesTax || 0);
+  const safeDepositAmount = Number(depositAmount || 0);
+
+  const discountAmount = (safeSubtotal * promoDiscount) / 100;
+  const discountedSubtotal = Math.max(0, safeSubtotal - discountAmount);
+
+  const adjustedSalesTax = safeSalesTax;
+  const adjustedLodgingTax = safeLodgingTax;
+
+  const finalTotal =
+    discountedSubtotal +
+    adjustedSalesTax +
+    adjustedLodgingTax +
+    safeDepositAmount;
+
+  function getOrderType() {
+    if (hasProperties) return 'property';
+    if (hasActivities) return 'activity';
+    if (hasMerchandise) return 'merch';
+    return 'all';
+  }
+
+  async function handleApplyPromoCode() {
+    const codeToUse = promoCode.trim().toUpperCase();
+
+    if (!codeToUse) {
+      setPromoMessage('Enter a promo code');
+      return;
+    }
+
+    setIsValidatingPromo(true);
+    setPromoMessage('');
+    setError('');
+
+    try {
+      const orderType = getOrderType();
+
+      const { data, error } = await supabase.rpc('validate_promo_code_v2', {
+        p_code: codeToUse,
+        p_order_type: orderType,
+        p_subtotal: safeSubtotal,
+      });
+
+      console.log('PROMO RPC RESULT:', {
+        code: codeToUse,
+        orderType,
+        subtotal: safeSubtotal,
+        data,
+        error,
+      });
+
+      if (error) throw error;
+
+      if (!data?.valid) {
+        setPromoApplied(false);
+        setPromoDiscount(0);
+        setPromoMessage(data?.message || 'Invalid promo code');
+        onPromoChange?.('', 0);
+        return;
+      }
+
+      const nextDiscount =
+        Number(
+          data.discount_percent ??
+            data.discount_percentage ??
+            data.discount_value ??
+            0
+        ) || 0;
+
+      setPromoCode(data.code || codeToUse);
+      setPromoDiscount(nextDiscount);
+      setPromoApplied(true);
+      setPromoMessage(`Promo applied: ${nextDiscount}% off`);
+      onPromoChange?.(data.code || codeToUse, nextDiscount);
+    } catch (err) {
+      console.error('Promo error:', err);
+      setPromoApplied(false);
+      setPromoDiscount(0);
+      setPromoMessage('Error applying promo code');
+      onPromoChange?.('', 0);
+    } finally {
+      setIsValidatingPromo(false);
+    }
+  }
+
+  function handleRemovePromoCode() {
+    setPromoCode('');
+    setPromoDiscount(0);
+    setPromoApplied(false);
+    setPromoMessage('');
+    onPromoChange?.('', 0);
+  }
+
+  async function handleCheckout() {
+    setError('');
+
+    if (!customerName.trim() || !customerEmail.trim()) {
+      setError('Please enter your name and email.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-payment-intent`;
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: safeItems,
+          customerName: customerName.trim(),
+          customerEmail: customerEmail.trim(),
+          subtotal: safeSubtotal,
+          lodgingTax: adjustedLodgingTax,
+          salesTax: adjustedSalesTax,
+          totalPrice: finalTotal,
+          promoCode: promoApplied ? promoCode : undefined,
+          promoDiscount: promoApplied ? promoDiscount : 0,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            'Failed to create checkout session'
+        );
+      }
+
+      if (!data?.url) {
+        throw new Error('No checkout URL received');
+      }
+
+      window.location.href = data.url;
+    } catch (err: any) {
+      console.error('Checkout error:', err);
+      setError(err?.message || 'Checkout failed');
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl">
+        <div className="sticky top-0 flex items-center justify-between border-b bg-white px-6 py-4">
+          <h2 className="text-2xl font-bold text-gray-900">
+            Secure Checkout
+          </h2>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-2 hover:bg-gray-100"
+          >
+            <X className="h-6 w-6 text-gray-500" />
+          </button>
+        </div>
+
+        <div className="space-y-6 p-6">
+          <div className="rounded-lg bg-gray-50 p-4 space-y-3">
+            <h3 className="font-semibold text-gray-900">Order Summary</h3>
+
+            {safeItems.map((item) => (
+              <div key={item.id} className="flex justify-between gap-4 text-sm">
+                <span className="text-gray-600">
+                  {item.type === 'activity'
+                    ? `${item.activity?.name || 'Activity'} - ${
+                        item.numPeople || 1
+                      } people`
+                    : item.type === 'property'
+                    ? `${item.property?.name || 'Property'} - ${
+                        item.guests || 1
+                      } guests`
+                    : item.type === 'merchandise'
+                    ? `${item.merchandiseName || item.name || 'Merchandise'} x ${
+                        item.quantity || 1
+                      }`
+                    : `Security Deposit - ${
+                        item.propertyName || 'Property'
+                      }`}
+                </span>
+
+                <span className="font-medium">
+                  ${Number(item.price || 0).toFixed(2)}
+                </span>
+              </div>
+            ))}
+
+            <div className="border-t pt-2 flex justify-between text-sm">
+              <span>Subtotal</span>
+              <span>${safeSubtotal.toFixed(2)}</span>
+            </div>
+
+            {promoApplied && promoDiscount > 0 && (
+              <div className="flex justify-between text-sm text-green-600">
+                <span>
+                  Discount ({promoDiscount}%) - {promoCode}
+                </span>
+                <span>-${discountAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            {adjustedSalesTax > 0 && (
+              <div className="flex justify-between text-sm">
+                <span>Sales Tax</span>
+                <span>${adjustedSalesTax.toFixed(2)}</span>
+              </div>
+            )}
+
+            {adjustedLodgingTax > 0 && (
+              <div className="flex justify-between text-sm">
+                <span>Lodging Tax</span>
+                <span>${adjustedLodgingTax.toFixed(2)}</span>
+              </div>
+            )}
+
+            {safeDepositAmount > 0 && (
+              <div className="flex justify-between text-sm text-yellow-700">
+                <span>Security Deposit Hold</span>
+                <span>${safeDepositAmount.toFixed(2)}</span>
+              </div>
+            )}
+
+            <div className="border-t-2 pt-3 flex justify-between">
+              <span className="font-semibold">Total</span>
+              <span className="text-xl font-bold text-blue-600">
+                ${finalTotal.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Full Name</label>
+            <input
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full rounded-lg border px-4 py-3"
+              placeholder="John Doe"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">
+              Email Address
+            </label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              className="w-full rounded-lg border px-4 py-3"
+              placeholder="john@example.com"
+            />
+          </div>
+
+          {!isDepositOnly && (
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Promo Code
+              </label>
+
+              {promoApplied ? (
+                <div className="flex items-center justify-between rounded-lg border border-green-300 bg-green-50 p-3">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <Tag className="h-4 w-4" />
+                    <span>
+                      {promoCode} applied ({promoDiscount}% off)
+                    </span>
+                  </div>
 
                   <button
                     type="button"
-                    onClick={onClose}
-                    className="p-2 hover:bg-white/20 rounded-lg"
+                    onClick={handleRemovePromoCode}
+                    className="rounded bg-red-500 px-3 py-1 text-xs text-white"
                   >
-                    <X className="w-6 h-6" />
+                    Remove
                   </button>
                 </div>
-              </div>
-            </div>
-
-            <div className="p-6">
-              {items.length === 0 ? (
-                <div className="text-center py-12">
-                  <ShoppingCart className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">Your cart is empty</p>
-                </div>
               ) : (
-                <>
-                  <div className="space-y-4 mb-6">
-                    {items.map((item: any, index: number) => {
-                      const displayName =
-                        item.type === 'activity'
-                          ? item.activity?.name || item.name || 'Activity'
-                          : item.type === 'property'
-                          ? item.property?.name || item.name || 'Property Rental'
-                          : item.type === 'merchandise'
-                          ? item.merchandise?.name || item.merchandiseName || item.name || 'Merchandise'
-                          : item.propertyName
-                          ? `Security Deposit - ${item.propertyName}`
-                          : 'Cart Item';
+                <div className="flex gap-2">
+                  <input
+                    value={promoCode}
+                    onChange={(e) =>
+                      setPromoCode(e.target.value.toUpperCase())
+                    }
+                    className="flex-1 rounded-lg border px-3 py-2"
+                    placeholder="Enter promo code"
+                  />
 
-                      const price = Number(item.price || item.activity?.price || item.merchandise?.price || 0);
+                  <button
+                    type="button"
+                    onClick={handleApplyPromoCode}
+                    disabled={isValidatingPromo}
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+                  >
+                    {isValidatingPromo ? 'Checking...' : 'Apply'}
+                  </button>
+                </div>
+              )}
 
-                      return (
-                        <div
-                          key={item.id || `${item.type || 'item'}-${index}`}
-                          className="bg-gradient-to-br from-slate-50 to-cyan-50 rounded-xl p-4 border border-cyan-100"
-                        >
-                          <div className="flex justify-between items-start gap-4">
-                            <div className="flex-1">
-                              <h3 className="font-bold text-gray-900 text-lg mb-2">
-                                {displayName}
-                              </h3>
-
-                              <div className="space-y-1 text-sm text-gray-600">
-                                {item.type === 'activity' && (
-                                  <>
-                                    <div className="flex items-center gap-2">
-                                      <Calendar className="w-4 h-4 text-cyan-600" />
-                                      <span>
-                                        {item.bookingDate || 'Date not selected'} at {item.bookingTime || 'Time not selected'}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                      <Users className="w-4 h-4 text-cyan-600" />
-                                      <span>
-                                        {item.numPeople || item.guests || 1}{' '}
-                                        {(item.numPeople || item.guests || 1) === 1 ? 'person' : 'people'}
-                                      </span>
-                                    </div>
-
-                                    {item.duration && (
-                                      <div className="flex items-center gap-2">
-                                        <Clock className="w-4 h-4 text-cyan-600" />
-                                        <span>{item.duration} hours</span>
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-
-                                {item.type === 'property' && (
-                                  <>
-                                    <div className="flex items-center gap-2">
-                                      <Calendar className="w-4 h-4 text-cyan-600" />
-                                      <span>Check-in: {item.checkInDate || 'Not selected'}</span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                      <Calendar className="w-4 h-4 text-cyan-600" />
-                                      <span>Check-out: {item.checkOutDate || 'Not selected'}</span>
-                                    </div>
-
-                                    <div className="flex items-center gap-2">
-                                      <Users className="w-4 h-4 text-cyan-600" />
-                                      <span>{item.guests || 1} guests</span>
-                                    </div>
-                                  </>
-                                )}
-
-                                {item.type === 'merchandise' && (
-                                  <>
-                                    {item.merchandiseSize && <div>Size: {item.merchandiseSize}</div>}
-                                    {item.merchandiseColor && <div>Color: {item.merchandiseColor}</div>}
-                                    <div>Quantity: {item.quantity || 1}</div>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="text-right">
-                              <div className="text-xl font-bold text-cyan-700 mb-2">
-                                ${money(price)}
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-  if (item?.id) {
-    removeItem(item.id);
-  }
-}}
-                                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="border-t border-gray-200 pt-6">
-                    <div className="bg-gradient-to-r from-cyan-50 to-blue-50 rounded-xl p-6 border border-cyan-200 mb-6">
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-lg text-gray-700">
-                          <span>Subtotal</span>
-                          <span className="font-semibold">${money(subtotal)}</span>
-                        </div>
-
-                        {salesTax > 0 && (
-                          <div className="flex justify-between text-lg text-gray-700">
-                            <span>Sales Tax</span>
-                            <span className="font-semibold">${money(salesTax)}</span>
-                          </div>
-                        )}
-
-                        {lodgingTax > 0 && (
-                          <div className="flex justify-between text-lg text-gray-700">
-                            <span>Lodging Tax</span>
-                            <span className="font-semibold">${money(lodgingTax)}</span>
-                          </div>
-                        )}
-
-                        {depositAmount > 0 && (
-                          <div className="flex justify-between text-lg text-yellow-700">
-                            <span>Security Deposit Hold</span>
-                            <span className="font-semibold">${money(depositAmount)}</span>
-                          </div>
-                        )}
-
-                        <div className="pt-2 border-t border-cyan-300 flex justify-between text-2xl font-bold text-cyan-700">
-                          <span>Total Amount</span>
-                          <span>${money(totalPrice)}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={onClose}
-                        className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-semibold"
-                      >
-                        Continue Shopping
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setShowCheckout(true)}
-                        disabled={items.length === 0}
-                        className="flex-1 px-6 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-semibold disabled:opacity-50"
-                      >
-                        Proceed to Checkout
-                      </button>
-                    </div>
-                  </div>
-                </>
+              {promoMessage && (
+                <p
+                  className={`mt-2 text-sm ${
+                    promoApplied ? 'text-green-600' : 'text-red-600'
+                  }`}
+                >
+                  {promoMessage}
+                </p>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      <CheckoutModal
-        isOpen={showCheckout}
-        onClose={() => setShowCheckout(false)}
-        items={items}
-        totalAmount={totalPrice}
-        subtotal={subtotal}
-        lodgingTax={lodgingTax}
-        salesTax={salesTax}
-        depositAmount={depositAmount}
-      />
-    </>
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleCheckout}
+            disabled={isLoading}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-cyan-600 px-6 py-4 font-semibold text-white disabled:opacity-50"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Redirecting to checkout...
+              </>
+            ) : (
+              'Proceed to Secure Checkout'
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
