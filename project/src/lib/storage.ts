@@ -59,4 +59,4 @@ export function getImageUrl(bucket: ImageBucket, path: string): string {
   } = supabase.storage.from(bucket).getPublicUrl(path);
 
   return publicUrl;
-}
+} 
