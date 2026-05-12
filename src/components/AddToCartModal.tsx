@@ -54,8 +54,8 @@ export function AddToCartModal({ activity, isOpen, onClose, onSuccess }: AddToCa
         basePrice += 25;
       }
     } else {
-      basePrice = activity.base_price;
-    }
+  basePrice = Number(activity.price || activity.base_price || 0);
+}
 
     return basePrice;
   };
