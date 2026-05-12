@@ -2,223 +2,206 @@ import { useState, useEffect } from 'react';
 import { Download, DollarSign, TrendingUp } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-interface TaxReportData {
-  booking_type: string;
-  month: string;
-  booking_count: number;
-  total_subtotal: number;
-  total_sales_tax: number;
-  total_surtax: number;
-  total_lodging_tax: number;
-  total_tax_collected: number;
+interface TaxReportRow {
+  id: string;
+  booking_id: string;
+  tax_amount: number;
+  created_at: string;
 }
 
 export function TaxReport() {
-  const [reportData, setReportData] = useState<TaxReportData[]>([]);
+  const [reportData, setReportData] = useState<TaxReportRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState<'all' | 'year' | 'quarter' | 'month'>('year');
 
   useEffect(() => {
     fetchTaxReport();
-  }, [dateRange]);
+  }, []);
 
   const fetchTaxReport = async () => {
     try {
       setLoading(true);
 
-      let query = supabase
+      const { data, error } = await supabase
         .from('tax_reports')
         .select('*')
-        .order('month', { ascending: false });
-
-      const now = new Date();
-      if (dateRange === 'year') {
-        const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), 1);
-        query = query.gte('month', yearAgo.toISOString());
-      } else if (dateRange === 'quarter') {
-        const quarterAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-        query = query.gte('month', quarterAgo.toISOString());
-      } else if (dateRange === 'month') {
-        const monthAgo = new Date(now.getFullYear(), now.getMonth(), 1);
-        query = query.gte('month', monthAgo.toISOString());
-      }
-
-      const { data, error } = await query;
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
+
       setReportData(data || []);
     } catch (error) {
-      console.error('Error fetching tax report:', error);
+      console.error(
+        'Error fetching tax report:',
+        error
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateTotals = () => {
-    return reportData.reduce(
-      (acc, row) => ({
-        bookings: acc.bookings + row.booking_count,
-        subtotal: acc.subtotal + Number(row.total_subtotal),
-        salesTax: acc.salesTax + Number(row.total_sales_tax),
-        surtax: acc.surtax + Number(row.total_surtax),
-        lodgingTax: acc.lodgingTax + Number(row.total_lodging_tax),
-        totalTax: acc.totalTax + Number(row.total_tax_collected),
-      }),
-      { bookings: 0, subtotal: 0, salesTax: 0, surtax: 0, lodgingTax: 0, totalTax: 0 }
+  const totalTaxCollected =
+    reportData.reduce(
+      (sum, row) =>
+        sum +
+        Number(row.tax_amount || 0),
+      0
     );
-  };
 
   const exportTaxReport = () => {
-    const totals = calculateTotals();
-
     const csv = [
-      ['Tax Collection Report', '', '', '', '', '', '', ''],
+      ['Tax Collection Report'],
       ['Generated:', new Date().toLocaleDateString()],
-      ['Period:', dateRange === 'all' ? 'All Time' : dateRange === 'year' ? 'Last 12 Months' : dateRange === 'quarter' ? 'Last 3 Months' : 'Current Month'],
       [''],
-      ['Month', 'Booking Type', 'Count', 'Subtotal', 'Sales Tax (6.5%)', 'Surtax (0.5%)', 'Lodging Tax (5%)', 'Total Tax Collected'].join(','),
-      ...reportData.map(row => [
-        new Date(row.month).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }),
-        row.booking_type === 'jet_ski' ? 'Jet Ski Rental' : 'Vacation Rental',
-        row.booking_count,
-        `$${Number(row.total_subtotal).toFixed(2)}`,
-        `$${Number(row.total_sales_tax).toFixed(2)}`,
-        `$${Number(row.total_surtax).toFixed(2)}`,
-        `$${Number(row.total_lodging_tax).toFixed(2)}`,
-        `$${Number(row.total_tax_collected).toFixed(2)}`,
-      ].join(',')),
-      [''],
-      ['TOTALS', '', totals.bookings, `$${totals.subtotal.toFixed(2)}`, `$${totals.salesTax.toFixed(2)}`, `$${totals.surtax.toFixed(2)}`, `$${totals.lodgingTax.toFixed(2)}`, `$${totals.totalTax.toFixed(2)}`].join(','),
-      [''],
-      ['TAX REMITTANCE BREAKDOWN'],
-      ['State Sales Tax (6.5%)', `$${totals.salesTax.toFixed(2)}`],
-      ['Local Surtax (0.5%)', `$${totals.surtax.toFixed(2)}`],
-      ['Lodging Tax (5%)', `$${totals.lodgingTax.toFixed(2)}`],
-      ['Total Tax to Remit', `$${totals.totalTax.toFixed(2)}`],
-    ].map(row => Array.isArray(row) ? row.join(',') : row).join('\n');
+      ['Date', 'Booking ID', 'Tax Amount'].join(','),
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+      ...reportData.map((row) =>
+        [
+          new Date(
+            row.created_at
+          ).toLocaleDateString(),
+
+          row.booking_id,
+
+          `$${Number(
+            row.tax_amount
+          ).toFixed(2)}`,
+        ].join(',')
+      ),
+
+      [''],
+      [
+        'TOTAL',
+        '',
+        `$${totalTaxCollected.toFixed(
+          2
+        )}`,
+      ].join(','),
+    ].join('\n');
+
+    const blob = new Blob([csv], {
+      type: 'text/csv',
+    });
+
+    const url =
+      window.URL.createObjectURL(blob);
+
+    const a =
+      document.createElement('a');
+
     a.href = url;
-    a.download = `tax-report-${dateRange}-${new Date().toISOString().split('T')[0]}.csv`;
+
+    a.download = `tax-report-${new Date()
+      .toISOString()
+      .split('T')[0]}.csv`;
+
     a.click();
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount);
+  const formatCurrency = (
+    amount: number
+  ) => {
+    return new Intl.NumberFormat(
+      'en-US',
+      {
+        style: 'currency',
+        currency: 'USD',
+      }
+    ).format(amount);
   };
-
-  const formatMonth = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-    });
-  };
-
-  const totals = calculateTotals();
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Tax Collection Report</h2>
+          <h2 className="text-2xl font-bold text-gray-900">
+            Tax Collection Report
+          </h2>
+
           <p className="text-gray-600 mt-1">
-            Track sales tax, lodging tax, and surtax collections for tax filing
+            Live Stripe tax collection data
           </p>
         </div>
-        <div className="flex gap-3">
-          <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value as any)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"
-          >
-            <option value="month">Current Month</option>
-            <option value="quarter">Last 3 Months</option>
-            <option value="year">Last 12 Months</option>
-            <option value="all">All Time</option>
-          </select>
-          <button
-            onClick={exportTaxReport}
-            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg font-semibold hover:bg-cyan-700 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
-        </div>
+
+        <button
+          onClick={exportTaxReport}
+          className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-lg font-semibold hover:bg-cyan-700 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          Export CSV
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-md p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 text-sm">Sales Tax (6.5%)</p>
-              <p className="text-2xl font-bold text-green-600">
-                {formatCurrency(totals.salesTax)}
+              <p className="text-gray-600 text-sm">
+                Total Tax Collected
               </p>
-            </div>
-            <DollarSign className="w-10 h-10 text-green-600" />
-          </div>
-          <p className="text-xs text-gray-500 mt-2">State tax for both rentals</p>
-        </div>
 
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm">Lodging Tax (5%)</p>
-              <p className="text-2xl font-bold text-blue-600">
-                {formatCurrency(totals.lodgingTax)}
+              <p className="text-3xl font-bold text-cyan-600">
+                {formatCurrency(
+                  totalTaxCollected
+                )}
               </p>
             </div>
-            <DollarSign className="w-10 h-10 text-blue-600" />
-          </div>
-          <p className="text-xs text-gray-500 mt-2">Vacation rentals only</p>
-        </div>
 
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm">Surtax (0.5%)</p>
-              <p className="text-2xl font-bold text-orange-600">
-                {formatCurrency(totals.surtax)}
-              </p>
-            </div>
-            <DollarSign className="w-10 h-10 text-orange-600" />
-          </div>
-          <p className="text-xs text-gray-500 mt-2">Jet ski rentals only</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-gray-600 text-sm">Total Tax Collected</p>
-              <p className="text-2xl font-bold text-cyan-600">
-                {formatCurrency(totals.totalTax)}
-              </p>
-            </div>
             <TrendingUp className="w-10 h-10 text-cyan-600" />
           </div>
-          <p className="text-xs text-gray-500 mt-2">{totals.bookings} paid bookings</p>
+
+          <p className="text-xs text-gray-500 mt-2">
+            {reportData.length} paid transactions
+          </p>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-md p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-600 text-sm">
+                Average Tax Per Sale
+              </p>
+
+              <p className="text-3xl font-bold text-green-600">
+                {formatCurrency(
+                  reportData.length > 0
+                    ? totalTaxCollected /
+                        reportData.length
+                    : 0
+                )}
+              </p>
+            </div>
+
+            <DollarSign className="w-10 h-10 text-green-600" />
+          </div>
+
+          <p className="text-xs text-gray-500 mt-2">
+            Based on Stripe checkout totals
+          </p>
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
         <div className="p-6 border-b border-gray-200">
-          <h3 className="text-xl font-bold text-gray-900">Monthly Breakdown</h3>
+          <h3 className="text-xl font-bold text-gray-900">
+            Tax Transactions
+          </h3>
         </div>
 
         {loading ? (
           <div className="p-12 text-center">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-600"></div>
-            <p className="mt-4 text-gray-600">Loading tax report...</p>
+
+            <p className="mt-4 text-gray-600">
+              Loading tax report...
+            </p>
           </div>
         ) : reportData.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
             <DollarSign className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <p>No tax data available for this period</p>
+
+            <p>
+              No tax data available yet
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -226,113 +209,63 @@ export function TaxReport() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                    Month
+                    Date
                   </th>
+
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase">
-                    Type
+                    Booking ID
                   </th>
+
                   <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                    Bookings
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                    Subtotal
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                    Sales Tax (6.5%)
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                    Surtax (0.5%)
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                    Lodging Tax (5%)
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase">
-                    Total Tax
+                    Tax Amount
                   </th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-gray-200">
-                {reportData.map((row, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {formatMonth(row.month)}
+                {reportData.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="hover:bg-gray-50"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {new Date(
+                        row.created_at
+                      ).toLocaleDateString()}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {row.booking_type === 'jet_ski' ? 'Jet Ski' : 'Vacation Rental'}
+                      {row.booking_id}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                      {row.booking_count}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right font-medium">
-                      {formatCurrency(Number(row.total_subtotal))}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                      {formatCurrency(Number(row.total_sales_tax))}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                      {formatCurrency(Number(row.total_surtax))}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                      {formatCurrency(Number(row.total_lodging_tax))}
-                    </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-cyan-600 text-right">
-                      {formatCurrency(Number(row.total_tax_collected))}
+                      {formatCurrency(
+                        Number(
+                          row.tax_amount
+                        )
+                      )}
                     </td>
                   </tr>
                 ))}
+
                 <tr className="bg-gray-100 font-semibold">
-                  <td className="px-6 py-4 text-sm text-gray-900" colSpan={2}>
+                  <td
+                    className="px-6 py-4 text-sm text-gray-900"
+                    colSpan={2}
+                  >
                     TOTAL
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                    {totals.bookings}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                    {formatCurrency(totals.subtotal)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                    {formatCurrency(totals.salesTax)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                    {formatCurrency(totals.surtax)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                    {formatCurrency(totals.lodgingTax)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-cyan-600 text-right">
-                    {formatCurrency(totals.totalTax)}
+
+                  <td className="px-6 py-4 text-sm text-cyan-600 text-right">
+                    {formatCurrency(
+                      totalTaxCollected
+                    )}
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
         )}
-      </div>
-
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6">
-        <h3 className="text-lg font-bold text-amber-900 mb-3">Tax Remittance Breakdown</h3>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-gray-700">State Sales Tax (6.5%):</span>
-            <span className="font-semibold text-gray-900">{formatCurrency(totals.salesTax)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-700">Local Surtax (0.5% on jet ski rentals):</span>
-            <span className="font-semibold text-gray-900">{formatCurrency(totals.surtax)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-gray-700">Lodging Tax (5% on vacation rentals):</span>
-            <span className="font-semibold text-gray-900">{formatCurrency(totals.lodgingTax)}</span>
-          </div>
-          <div className="border-t border-amber-300 pt-2 mt-2 flex justify-between">
-            <span className="font-bold text-gray-900">Total Tax to Remit:</span>
-            <span className="font-bold text-amber-900">{formatCurrency(totals.totalTax)}</span>
-          </div>
-        </div>
-        <p className="text-xs text-amber-800 mt-4">
-          Work with your accountant to ensure proper filing and remittance to state and county authorities.
-          This report includes only paid bookings.
-        </p>
       </div>
     </div>
   );
