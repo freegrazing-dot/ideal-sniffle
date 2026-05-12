@@ -25,7 +25,7 @@ export default function SecurityDepositCard({ product, propertyName, onAddToCart
           <div className="text-right">
             <p className="text-sm text-yellow-700 font-medium">Security Deposit</p>
             <p className="text-3xl font-bold text-yellow-900">
-              ${product.deposit_amount.toFixed(0)}
+              ${Number(product.deposit_amount || 0).toFixed(0)}
             </p>
           </div>
         </div>
