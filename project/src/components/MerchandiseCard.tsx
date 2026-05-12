@@ -92,7 +92,7 @@ export default function MerchandiseCard({ item, onAddToCart }: MerchandiseCardPr
           <div className={item.image_url ? 'w-full flex justify-between items-start' : 'text-right'}>
             <p className="text-sm text-teal-700 font-medium">{item.category}</p>
             <p className="text-3xl font-bold text-teal-900">
-              ${item.price.toFixed(2)}
+              ${Number(item.price || 0).toFixed(2)}
             </p>
           </div>
         </div>
