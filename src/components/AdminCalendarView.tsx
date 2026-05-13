@@ -1,226 +1,218 @@
 import { useState, useEffect } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Calendar as CalendarIcon,
-  Plus,
-  Trash2,
-  Clock,
-  Users,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Activity, Booking, AvailabilityException } from '../types';
 
-interface DayBooking extends Booking {
-  activities?: Activity;
+interface RentalBooking {
+  id: string;
+  property_id: string;
+  customer_name: string;
+  customer_email: string;
+  check_in_date: string;
+  check_out_date: string;
+  guests: number;
+  total_nights: number;
+  total_price: number;
+  status: string;
+  payment_status: string;
+  properties?: {
+    name: string;
+  };
+}
+
+interface ExternalEvent {
+  id: string;
+  property_id: string;
+  source: string;
+  start_date: string;
+  end_date: string;
+  summary: string;
+  status?: string;
 }
 
 interface DayData {
   date: Date;
-  bookings: DayBooking[];
-  exceptions: AvailabilityException[];
-  isBlocked: boolean;
+  bookings: RentalBooking[];
+  external: ExternalEvent[];
 }
 
 export function AdminCalendarView() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [monthData, setMonthData] = useState<Map<string, DayData>>(new Map());
-  const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [showBlockModal, setShowBlockModal] = useState(false);
-  const [blockForm, setBlockForm] = useState({
-    activity_id: '',
-    start_time: '',
-    end_time: '',
-    reason: 'blocked',
-    notes: '',
-  });
-
-  useEffect(() => {
-    loadActivities();
-  }, []);
 
   useEffect(() => {
     loadMonthData();
   }, [currentMonth]);
 
-  async function loadActivities() {
-    const { data } = await supabase.from('activities').select('*');
-    setActivities(Array.isArray(data) ? data : []);
-  }
+  const toDateString = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
-  async function loadMonthData() {
+  const loadMonthData = async () => {
     setLoading(true);
 
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
+
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
 
-    const startDateStr = firstDay.toISOString().split('T')[0];
-    const endDateStr = lastDay.toISOString().split('T')[0];
+    const startDateStr = toDateString(firstDay);
+    const endDateStr = toDateString(lastDay);
 
-    const [bookingsResult, exceptionsResult] = await Promise.all([
-      supabase
-        .from('bookings')
-        .select('*, activities(*)')
-        .gte('booking_date', startDateStr)
-        .lte('booking_date', endDateStr)
-        .in('status', ['pending', 'confirmed']),
-      supabase
-        .from('availability_exceptions')
-        .select('*')
-        .gte('exception_date', startDateStr)
-        .lte('exception_date', endDateStr),
-    ]);
+   const { data: bookingData, error: bookingError } = await supabase
+  .from('rental_bookings')
+  .select('*, properties(*)')
+  .lte('check_in_date', endDateStr)
+  .gte('check_out_date', startDateStr);
 
-    const bookings = Array.isArray(bookingsResult.data)
-      ? (bookingsResult.data as DayBooking[])
-      : [];
+    if (bookingError) {
+      console.error('Error loading rental bookings:', bookingError);
+    }
 
-    const exceptions = Array.isArray(exceptionsResult.data)
-      ? (exceptionsResult.data as AvailabilityException[])
-      : [];
+    const { data: externalData, error: externalError } = await supabase
+      .from('external_calendar_events')
+      .select('id, property_id, source, start_date, end_date, summary, status')
+      .lte('start_date', endDateStr)
+      .gte('end_date', startDateStr)
+      .order('start_date', { ascending: true });
 
+    if (externalError) {
+      console.error('Error loading external calendar events:', externalError);
+    }
+
+    const bookings = (bookingData || []) as RentalBooking[];
+    const externalEvents = (externalData || []) as ExternalEvent[];
     const dataMap = new Map<string, DayData>();
 
     for (let day = 1; day <= lastDay.getDate(); day++) {
       const date = new Date(year, month, day);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = toDateString(date);
 
-      const dayBookings = bookings.filter((b) => b.booking_date === dateStr);
-      const dayExceptions = exceptions.filter((e) => e.exception_date === dateStr);
+      const dayBookings = bookings.filter((booking) => {
+        return booking.check_in_date <= dateStr && booking.check_out_date >= dateStr;
+      });
 
-      const isBlocked = (Array.isArray(dayExceptions) ? dayExceptions : []).some(
-  (e) => !e.start_time && !e.end_time
-);
+      const dayExternal = externalEvents.filter((event) => {
+        return event.start_date <= dateStr && event.end_date >= dateStr;
+      });
 
       dataMap.set(dateStr, {
         date,
         bookings: dayBookings,
-        exceptions: dayExceptions,
-        isBlocked,
+        external: dayExternal,
       });
     }
 
     setMonthData(dataMap);
     setLoading(false);
-  }
+  };
 
-  function getDaysInMonth() {
+  const getDaysInMonth = () => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    const startingDayOfWeek = firstDay.getDay();
+
     const days: (Date | null)[] = [];
 
-    for (let i = 0; i < firstDay.getDay(); i++) {
+    for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
 
-    for (let day = 1; day <= lastDay.getDate(); day++) {
+    for (let day = 1; day <= daysInMonth; day++) {
       days.push(new Date(year, month, day));
     }
 
     return days;
-  }
+  };
 
-  function previousMonth() {
+  const previousMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
-  }
+  };
 
-  function nextMonth() {
+  const nextMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
-  }
+  };
 
-  function formatMonthYear() {
-    return currentMonth.toLocaleDateString('en-US', {
-      month: 'long',
-      year: 'numeric',
-    });
-  }
+  const formatMonthYear = () => {
+    return currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
 
-  function getDayClassName(date: Date | null, isSelected: boolean) {
+  const formatSource = (source: string) => {
+    if (!source) return 'External';
+    return source.charAt(0).toUpperCase() + source.slice(1);
+  };
+
+  const getDayClassName = (date: Date | null, isSelected: boolean) => {
     if (!date) return '';
 
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = toDateString(date);
     const dayData = monthData.get(dateStr);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const thisDate = new Date(date);
+    thisDate.setHours(0, 0, 0, 0);
 
     let className =
-      'min-h-24 p-2 border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors';
+      'min-h-28 p-2 border border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors bg-white';
 
-    if (date.getTime() === today.getTime()) className += ' ring-2 ring-cyan-500';
-    if (isSelected) className += ' bg-cyan-50';
-    if (dayData?.isBlocked) className += ' bg-red-50';
-    else if (dayData && dayData.bookings.length > 0) className += ' bg-blue-50';
+    if (thisDate.getTime() === today.getTime()) {
+      className += ' ring-2 ring-cyan-500';
+    }
+
+    if (isSelected) {
+      className += ' bg-cyan-50';
+    }
+
+    if (dayData && (dayData.bookings.length > 0 || dayData.external.length > 0)) {
+      className += ' bg-green-50';
+    }
 
     return className;
-  }
+  };
 
-  async function handleBlockDate() {
-    if (!selectedDate) return;
+  const getBookingLabel = (booking: RentalBooking, dateStr: string) => {
+    if (booking.check_in_date === dateStr) return `Check-in: ${booking.customer_name}`;
+    if (booking.check_out_date === dateStr) return `Check-out: ${booking.customer_name}`;
+    return booking.customer_name;
+  };
 
-    try {
-      const exception: Partial<AvailabilityException> = {
-        activity_id: blockForm.activity_id || null,
-        exception_date: selectedDate,
-        start_time: blockForm.start_time || null,
-        end_time: blockForm.end_time || null,
-        reason: blockForm.reason as any,
-        notes: blockForm.notes,
-      };
+  const getBookingColor = (booking: RentalBooking, dateStr: string) => {
+    if (booking.check_in_date === dateStr) return 'bg-green-100 text-green-800';
+    if (booking.check_out_date === dateStr) return 'bg-red-100 text-red-800';
+    return 'bg-blue-100 text-blue-800';
+  };
 
-      const { error } = await supabase.from('availability_exceptions').insert(exception);
-      if (error) throw error;
+  const getExternalColor = (source: string) => {
+    const normalized = (source || '').toLowerCase();
 
-      setShowBlockModal(false);
-      setBlockForm({
-        activity_id: '',
-        start_time: '',
-        end_time: '',
-        reason: 'blocked',
-        notes: '',
-      });
+    if (normalized.includes('airbnb')) return 'bg-pink-100 text-pink-800';
+    if (normalized.includes('vrbo')) return 'bg-purple-100 text-purple-800';
+    if (normalized.includes('booking')) return 'bg-yellow-100 text-yellow-800';
 
-      loadMonthData();
-    } catch (error) {
-      console.error('Error blocking date:', error);
-      alert('Failed to block date. Please try again.');
-    }
-  }
+    return 'bg-gray-200 text-gray-800';
+  };
 
-  async function handleRemoveException(exceptionId: string) {
-    if (!confirm('Remove this blocked time?')) return;
+  const getExternalLabel = (event: ExternalEvent, dateStr: string) => {
+    const source = formatSource(event.source);
 
-    try {
-      const { error } = await supabase
-        .from('availability_exceptions')
-        .delete()
-        .eq('id', exceptionId);
+    if (event.start_date === dateStr) return `${source} start`;
+    if (event.end_date === dateStr) return `${source} end`;
 
-      if (error) throw error;
-
-      loadMonthData();
-    } catch (error) {
-      console.error('Error removing exception:', error);
-    }
-  }
+    return `${source} blocked`;
+  };
 
   const days = getDaysInMonth();
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-  const selectedDayData: DayData | null = selectedDate
-    ? monthData.get(selectedDate) || {
-        date: new Date(`${selectedDate}T00:00:00`),
-        bookings: [],
-        exceptions: [],
-        isBlocked: false,
-      }
-    : null;
+  const selectedDayData = selectedDate ? monthData.get(selectedDate) : null;
 
   return (
     <div className="space-y-6">
@@ -228,7 +220,7 @@ export function AdminCalendarView() {
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <CalendarIcon className="w-6 h-6 text-cyan-600" />
-            Booking Calendar
+            Property Booking Calendar
           </h2>
 
           <div className="flex items-center gap-2">
@@ -248,26 +240,28 @@ export function AdminCalendarView() {
 
         <div className="grid grid-cols-7 gap-px bg-gray-200 border border-gray-200">
           {weekDays.map((day) => (
-            <div
-              key={day}
-              className="bg-gray-50 text-center text-sm font-semibold text-gray-700 py-3"
-            >
+            <div key={day} className="bg-gray-50 text-center text-sm font-semibold text-gray-700 py-3">
               {day}
             </div>
           ))}
 
           {loading ? (
             <div className="col-span-7 bg-white p-12 text-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-600" />
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-600"></div>
             </div>
           ) : (
             days.map((day, index) => {
-              if (!day) return <div key={`empty-${index}`} className="bg-white min-h-24" />;
+              if (!day) {
+                return <div key={`empty-${index}`} className="bg-white min-h-28" />;
+              }
 
-              const dateStr = day.toISOString().split('T')[0];
+              const dateStr = toDateString(day);
               const dayData = monthData.get(dateStr);
               const isSelected = dateStr === selectedDate;
-              const safeBookings = dayData?.bookings || [];
+
+              const visibleBookings = dayData?.bookings || [];
+              const visibleExternal = dayData?.external || [];
+              const totalItems = visibleBookings.length + visibleExternal.length;
 
               return (
                 <div
@@ -277,27 +271,31 @@ export function AdminCalendarView() {
                 >
                   <div className="font-semibold text-gray-900 mb-1">{day.getDate()}</div>
 
-                  {dayData && (
+                  {dayData && totalItems > 0 && (
                     <div className="space-y-1">
-                      {safeBookings.slice(0, 2).map((booking) => (
+                      {visibleBookings.slice(0, 2).map((booking) => (
                         <div
-                          key={booking.id}
-                          className="text-xs bg-cyan-100 text-cyan-800 px-1.5 py-0.5 rounded truncate"
+                          key={`booking-${booking.id}`}
+                          className={`text-xs px-1.5 py-0.5 rounded truncate ${getBookingColor(booking, dateStr)}`}
+                          title={`${booking.customer_name} - TKAC Booking`}
                         >
-                          {booking.booking_time} -{' '}
-                          {booking.activities?.name?.substring(0, 15) || 'Booking'}
+                          {getBookingLabel(booking, dateStr)}
                         </div>
                       ))}
 
-                      {safeBookings.length > 2 && (
-                        <div className="text-xs text-gray-600 font-medium">
-                          +{safeBookings.length - 2} more
+                      {visibleExternal.slice(0, 3).map((event) => (
+                        <div
+                          key={`external-${event.id}`}
+                          className={`text-xs px-1.5 py-0.5 rounded truncate ${getExternalColor(event.source)}`}
+                          title={`${formatSource(event.source)} - ${event.summary || 'Blocked'}`}
+                        >
+                          {getExternalLabel(event, dateStr)}
                         </div>
-                      )}
+                      ))}
 
-                      {dayData.isBlocked && (
-                        <div className="text-xs bg-red-100 text-red-800 px-1.5 py-0.5 rounded">
-                          Blocked
+                      {totalItems > 5 && (
+                        <div className="text-xs text-gray-600 font-medium">
+                          +{totalItems - 5} more
                         </div>
                       )}
                     </div>
@@ -307,165 +305,96 @@ export function AdminCalendarView() {
             })
           )}
         </div>
+
+        <div className="mt-4 flex flex-wrap gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-100 border border-green-200 rounded" />
+            <span className="text-gray-600">TKAC Check-in</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded" />
+            <span className="text-gray-600">TKAC Booked Night</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-red-100 border border-red-200 rounded" />
+            <span className="text-gray-600">TKAC Check-out</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-pink-100 border border-pink-200 rounded" />
+            <span className="text-gray-600">Airbnb</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-purple-100 border border-purple-200 rounded" />
+            <span className="text-gray-600">VRBO</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-yellow-100 border border-yellow-200 rounded" />
+            <span className="text-gray-600">Booking.com</span>
+          </div>
+        </div>
       </div>
 
       {selectedDate && selectedDayData && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-gray-900">
-              {selectedDayData.date.toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </h3>
+          <h3 className="text-xl font-bold text-gray-900 mb-4">
+            {selectedDayData.date.toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </h3>
 
-            <button
-              onClick={() => setShowBlockModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-semibold"
-            >
-              <Plus className="w-4 h-4" />
-              Block Time
-            </button>
-          </div>
-
-          {(selectedDayData.bookings || []).length > 0 && (
-            <div className="mb-6">
-              <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Users className="w-5 h-5 text-cyan-600" />
-                Bookings ({(selectedDayData.bookings || []).length})
-              </h4>
-
-              <div className="space-y-3">
-                {(selectedDayData.bookings || []).map((booking) => (
-                  <div key={booking.id} className="bg-cyan-50 border border-cyan-200 rounded-lg p-4">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="font-semibold text-gray-900">{booking.booking_time}</span>
-                      <span className="px-2 py-1 bg-cyan-100 text-cyan-800 text-xs font-medium rounded">
-                        {booking.activities?.name || 'Activity'}
-                      </span>
-                    </div>
-
-                    <div className="text-sm text-gray-700">
-                      <p className="font-medium">{booking.customer_name}</p>
-                      <p>
-                        {booking.customer_email} • {booking.customer_phone}
-                      </p>
-                      <p className="mt-1">
-                        <span className="font-medium">{booking.num_people} people</span> • $
-                        {booking.total_price}
-                      </p>
-                    </div>
+          {selectedDayData.bookings.length > 0 || selectedDayData.external.length > 0 ? (
+            <div className="space-y-3">
+              {selectedDayData.bookings.map((booking) => (
+                <div key={`selected-booking-${booking.id}`} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="font-semibold text-gray-900">
+                    TKAC Booking — {booking.properties?.name || 'Property'}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
 
-          {(selectedDayData.exceptions || []).length > 0 && (
-            <div>
-              <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-red-600" />
-                Blocked Times
-              </h4>
-
-              <div className="space-y-2">
-                {(selectedDayData.exceptions || []).map((exception) => (
-                  <div
-                    key={exception.id}
-                    className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="font-medium text-gray-900">
-                        {exception.start_time && exception.end_time
-                          ? `${exception.start_time} - ${exception.end_time}`
-                          : 'All Day'}
-                      </div>
-                      <div className="text-sm text-gray-600 mt-1">
-                        {exception.notes || exception.reason}
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleRemoveException(exception.id)}
-                      className="p-2 text-red-600 hover:bg-red-100 rounded-lg"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <div className="text-sm text-gray-700 mt-1">
+                    {booking.customer_name} — {booking.customer_email}
                   </div>
-                ))}
-              </div>
+
+                  <div className="text-sm text-gray-600 mt-1">
+                    {booking.check_in_date} to {booking.check_out_date} • {booking.guests} guest(s)
+                  </div>
+
+                  <div className="text-sm text-gray-600 mt-1">
+                    ${Number(booking.total_price || 0).toFixed(2)} • {booking.status}
+                  </div>
+                </div>
+              ))}
+
+              {selectedDayData.external.map((event) => (
+                <div key={`selected-external-${event.id}`} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="font-semibold text-gray-900">
+                    {formatSource(event.source)} Blocked Date
+                  </div>
+
+                  <div className="text-sm text-gray-700 mt-1">
+                    {event.summary || 'Not available'}
+                  </div>
+
+                  <div className="text-sm text-gray-600 mt-1">
+                    {event.start_date} to {event.end_date}
+                  </div>
+
+                  <div className="text-sm text-gray-600 mt-1">
+                    Status: {event.status || 'blocked'}
+                  </div>
+                </div>
+              ))}
             </div>
+          ) : (
+            <p className="text-gray-500 text-center py-8">No bookings or blocked dates for this date</p>
           )}
-
-          {(selectedDayData.bookings || []).length === 0 &&
-            (selectedDayData.exceptions || []).length === 0 && (
-              <p className="text-gray-500 text-center py-8">
-                No bookings or blocked times for this date
-              </p>
-            )}
-        </div>
-      )}
-
-      {showBlockModal && selectedDate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-4">Block Time Slot</h3>
-
-            <div className="space-y-4">
-              <select
-                value={blockForm.activity_id}
-                onChange={(e) => setBlockForm({ ...blockForm, activity_id: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="">All Activities</option>
-                {activities.map((activity) => (
-                  <option key={activity.id} value={activity.id}>
-                    {activity.name}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                type="time"
-                value={blockForm.start_time}
-                onChange={(e) => setBlockForm({ ...blockForm, start_time: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-
-              <input
-                type="time"
-                value={blockForm.end_time}
-                onChange={(e) => setBlockForm({ ...blockForm, end_time: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-
-              <textarea
-                value={blockForm.notes}
-                onChange={(e) => setBlockForm({ ...blockForm, notes: e.target.value })}
-                rows={3}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                placeholder="Notes..."
-              />
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setShowBlockModal(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={handleBlockDate}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg"
-              >
-                Block Time
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>
